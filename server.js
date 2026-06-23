@@ -190,30 +190,47 @@ app.post('/action', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Resolve a song query -> a YouTube videoId (needed for ytmd://play/<id>).
+// Resolve a song query -> a YouTube Music videoId (needed for ytmd://play/<id>).
 //
 // The browser can't query YouTube across origins, and public CORS proxies are
 // no longer free for hosted origins. So the server does the lookup itself —
-// there's no CORS server-to-server. It calls YouTube's internal search API with
-// YouTube's PUBLIC web-client key (this is NOT a personal API key and needs no
-// setup or quota), then returns just the first video result's id.
+// there's no CORS server-to-server.
+//
+// We search YOUTUBE MUSIC (not regular YouTube) with a "songs" filter, so we get
+// the actual audio track ("Get Lucky") rather than the music video ("Get Lucky
+// (Official Video)"). It uses YouTube Music's PUBLIC web-client key — this is NOT
+// a personal API key and needs no setup or quota — and returns the first song's id.
 //
 // This is the one "smart" thing the server does, and it's deliberately narrow:
-// it only ever talks to YouTube's search endpoint and returns an id string. It
-// does not control YouTube Music — that stays entirely on the host tab.
+// it only talks to the YT Music search endpoint and returns an id. It does not
+// control YouTube Music playback — that stays entirely on the host tab.
 // ---------------------------------------------------------------------------
-const YT_WEB_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'; // YouTube's own public WEB client key
+const YTM_KEY = 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';       // YT Music WEB_REMIX public key
+const YTM_SONGS_FILTER = 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D';      // search filter: songs only
 
-// Depth-first search for the first videoRenderer.videoId in the search response.
-function findFirstVideo(obj) {
+// Find a watchEndpoint.videoId anywhere inside a node (DFS).
+function findWatchVideoId(obj) {
   if (!obj || typeof obj !== 'object') return null;
-  if (obj.videoRenderer && obj.videoRenderer.videoId) {
-    const vr = obj.videoRenderer;
-    const title = vr.title && vr.title.runs && vr.title.runs[0] ? vr.title.runs[0].text : '';
-    return { id: vr.videoId, title };
+  if (obj.watchEndpoint && obj.watchEndpoint.videoId) return obj.watchEndpoint.videoId;
+  for (const k of Object.keys(obj)) {
+    const hit = findWatchVideoId(obj[k]);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// DFS for the first YT Music song row and pull its videoId + title.
+function findFirstSong(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (obj.musicResponsiveListItemRenderer) {
+    const it = obj.musicResponsiveListItemRenderer;
+    const vid = (it.playlistItemData && it.playlistItemData.videoId) || findWatchVideoId(it);
+    const col = (it.flexColumns && it.flexColumns[0] && it.flexColumns[0].musicResponsiveListItemFlexColumnRenderer) || {};
+    const title = col.text && col.text.runs && col.text.runs[0] ? col.text.runs[0].text : '';
+    if (vid) return { id: vid, title };
   }
   for (const k of Object.keys(obj)) {
-    const hit = findFirstVideo(obj[k]);
+    const hit = findFirstSong(obj[k]);
     if (hit) return hit;
   }
   return null;
@@ -223,17 +240,17 @@ app.get('/resolve', async (req, res) => {
   const q = (req.query.q || '').toString().trim();
   if (!q) return res.json({ videoId: null });
   try {
-    const r = await fetch('https://www.youtube.com/youtubei/v1/search?key=' + YT_WEB_KEY, {
+    const r = await fetch('https://music.youtube.com/youtubei/v1/search?key=' + YTM_KEY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00', hl: 'en', gl: 'US' } },
+        context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20240101.01.00', hl: 'en', gl: 'US' } },
         query: q,
-        params: 'EgIQAQ%3D%3D', // search filter: videos only
+        params: YTM_SONGS_FILTER,
       }),
     });
     if (!r.ok) return res.json({ videoId: null });
-    const hit = findFirstVideo(JSON.parse(await r.text()));
+    const hit = findFirstSong(JSON.parse(await r.text()));
     res.json({ videoId: hit ? hit.id : null, title: hit ? hit.title : null });
   } catch (e) {
     res.json({ videoId: null });

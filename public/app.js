@@ -684,13 +684,13 @@ function ConvertSeconds(time) {
  *  videoId, which `ytmd://play/` needs. This function bridges that gap.
  *
  *  Two strategies, in order of preference:
- *    1. YouTube Data API v3 — used only if you supply a key (?ytKey=... once, or
- *       localStorage 'srq_yt_api_key'). Most reliable; Google's API sends CORS
- *       headers so the browser can call it directly. Restrict the key to your
- *       Render domain (HTTP referrer) in the Google Cloud console.
- *    2. Zero-config fallback — scrape the first videoId out of a normal YouTube
- *       search results page, fetched through the same public CORS proxy the
- *       metadata search already uses (corsproxy.io). No key required.
+ *    1. Our OWN server's /resolve endpoint (default, zero-config). The browser
+ *       can't query YouTube across origins, so the Node server does the search
+ *       server-side (no CORS there) and returns the videoId. Same-origin call —
+ *       no third-party proxy involved. See /resolve in server.js.
+ *    2. YouTube Data API v3 — fallback, only if you supply a key (?ytKey=... once,
+ *       or localStorage 'srq_yt_api_key'). Google's API sends CORS headers so the
+ *       browser can call it directly. Restrict the key to your app domain.
  *
  *  Returns an 11-char videoId string, or null if nothing could be resolved
  *  (the item is still queued, just flagged not-playable).
@@ -699,7 +699,16 @@ async function ResolveYouTubeVideoId(title, artist) {
   const query = [title, artist].filter(Boolean).join(' ').trim();
   if (!query) return null;
 
-  // --- Strategy 1: YouTube Data API v3 (only if a key is configured) ---------
+  // --- Strategy 1: ask our own server (same-origin, no CORS, no proxy) -------
+  try {
+    const r = await fetch(`${SERVER}/resolve?q=` + encodeURIComponent(query));
+    if (r.ok) {
+      const j = await r.json();
+      if (j.videoId) return j.videoId;
+    }
+  } catch (e) { console.debug('[videoId] server resolve failed, trying fallback', e); }
+
+  // --- Strategy 2: YouTube Data API v3 (only if a key is configured) ---------
   const ytKey = params.get('ytKey') || localStorage.getItem(STORE.ytApiKey);
   if (ytKey) {
     try {
@@ -712,17 +721,8 @@ async function ResolveYouTubeVideoId(title, artist) {
         const vid = j.items && j.items[0] && j.items[0].id && j.items[0].id.videoId;
         if (vid) return vid;
       }
-    } catch (e) { console.debug('[videoId] Data API failed, falling back', e); }
+    } catch (e) { console.debug('[videoId] Data API failed', e); }
   }
-
-  // --- Strategy 2: scrape YouTube search results via public CORS proxy -------
-  try {
-    const target = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
-    const proxied = 'https://corsproxy.io/?url=' + encodeURIComponent(target);
-    const html = await (await fetch(proxied)).text();
-    const m = html.match(/"videoId":"([\w-]{11})"/); // first result wins
-    if (m) return m[1];
-  } catch (e) { console.debug('[videoId] scrape failed', e); }
 
   return null;
 }

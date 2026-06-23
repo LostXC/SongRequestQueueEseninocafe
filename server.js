@@ -190,6 +190,57 @@ app.post('/action', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Resolve a song query -> a YouTube videoId (needed for ytmd://play/<id>).
+//
+// The browser can't query YouTube across origins, and public CORS proxies are
+// no longer free for hosted origins. So the server does the lookup itself —
+// there's no CORS server-to-server. It calls YouTube's internal search API with
+// YouTube's PUBLIC web-client key (this is NOT a personal API key and needs no
+// setup or quota), then returns just the first video result's id.
+//
+// This is the one "smart" thing the server does, and it's deliberately narrow:
+// it only ever talks to YouTube's search endpoint and returns an id string. It
+// does not control YouTube Music — that stays entirely on the host tab.
+// ---------------------------------------------------------------------------
+const YT_WEB_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'; // YouTube's own public WEB client key
+
+// Depth-first search for the first videoRenderer.videoId in the search response.
+function findFirstVideo(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (obj.videoRenderer && obj.videoRenderer.videoId) {
+    const vr = obj.videoRenderer;
+    const title = vr.title && vr.title.runs && vr.title.runs[0] ? vr.title.runs[0].text : '';
+    return { id: vr.videoId, title };
+  }
+  for (const k of Object.keys(obj)) {
+    const hit = findFirstVideo(obj[k]);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+app.get('/resolve', async (req, res) => {
+  const q = (req.query.q || '').toString().trim();
+  if (!q) return res.json({ videoId: null });
+  try {
+    const r = await fetch('https://www.youtube.com/youtubei/v1/search?key=' + YT_WEB_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00', hl: 'en', gl: 'US' } },
+        query: q,
+        params: 'EgIQAQ%3D%3D', // search filter: videos only
+      }),
+    });
+    if (!r.ok) return res.json({ videoId: null });
+    const hit = findFirstVideo(JSON.parse(await r.text()));
+    res.json({ videoId: hit ? hit.id : null, title: hit ? hit.title : null });
+  } catch (e) {
+    res.json({ videoId: null });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Host liveness watchdog: if the host stops beating, flag it offline so mods
 // get the "Host offline" banner instead of silently broken buttons.
 // ---------------------------------------------------------------------------

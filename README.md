@@ -145,16 +145,15 @@ widget). The viewer's typed text (`user_input`) is the song query.
 ## Resolving a YouTube Music videoId
 
 `ytmd://play/<videoId>` needs a YouTube **videoId**, which the metadata search
-doesn't provide. [`ResolveYouTubeVideoId`](public/app.js) handles it, isolated so
-you can swap the strategy:
+doesn't provide. [`ResolveYouTubeVideoId`](public/app.js) handles it:
 
-- **Default (zero-config):** scrape the first result's videoId from a normal
-  YouTube search page, fetched through the same public CORS proxy the metadata
-  search already uses. No API key.
-- **Optional (more robust):** YouTube Data API v3. Provide a key via
-  `?ytKey=YOUR_KEY` once (saved locally) or set `localStorage['srq_yt_api_key']`.
-  Restrict the key to your app domain in Google Cloud. When present it's
-  preferred over the scrape.
+- **Default (zero-config):** the browser asks **its own server** (`GET /resolve`),
+  which runs the YouTube search server-side (no CORS there) and returns the first
+  result's videoId. No third-party proxy, no API key. See `/resolve` in
+  [`server.js`](server.js).
+- **Optional fallback:** YouTube Data API v3. Provide a key via `?ytKey=YOUR_KEY`
+  once (saved locally) or set `localStorage['srq_yt_api_key']`. Used only if the
+  server lookup returns nothing.
 
 If no videoId can be found, the song is **still queued** but flagged
 *not playable* so mods see why.

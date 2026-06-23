@@ -54,6 +54,9 @@ const el = (id) => document.getElementById(id);
 const ui = {
   roleBadge: el('roleBadge'),
   detecting: el('detecting'),
+  rolePrompt: el('rolePrompt'),
+  chooseHostBtn: el('chooseHostBtn'),
+  chooseModBtn: el('chooseModBtn'),
   login: el('login'),
   loginForm: el('loginForm'),
   codeInput: el('codeInput'),
@@ -88,23 +91,43 @@ let role = null;
 //  Boot: detect the mode, then run the matching path.
 // =============================================================================
 (async function boot() {
-  const mode = await detectMode();
-  if (mode === 'host') {
-    role = 'host';
-    ui.roleBadge.textContent = 'HOST';
-    ui.roleBadge.className = 'badge host';
-    await initHost();
-  } else {
-    role = 'viewer';
-    ui.roleBadge.textContent = 'VIEWER';
-    ui.roleBadge.className = 'badge viewer';
-    initViewer();
-  }
+  const decision = await detectMode();
+  if (decision === 'host') return startHost();       // forced via ?host
+  if (decision === 'viewer') return startViewer();   // can't host, or forced ?viewer
+  // 'choose' — this machine CAN host, so let the person pick rather than assume.
+  showRolePrompt();
 })();
 
+// Run the host path.
+async function startHost() {
+  role = 'host';
+  ui.roleBadge.textContent = 'HOST';
+  ui.roleBadge.className = 'badge host';
+  await initHost();
+}
+
+// Run the viewer (mod) path.
+function startViewer() {
+  role = 'viewer';
+  ui.roleBadge.textContent = 'VIEWER';
+  ui.roleBadge.className = 'badge viewer';
+  initViewer();
+}
+
+// This machine can host — show the "host or mod?" choice and branch on the click.
+function showRolePrompt() {
+  ui.detecting.classList.add('hidden');
+  ui.rolePrompt.classList.remove('hidden');
+  ui.chooseHostBtn.addEventListener('click', () => { ui.rolePrompt.classList.add('hidden'); startHost(); });
+  ui.chooseModBtn.addEventListener('click', () => { ui.rolePrompt.classList.add('hidden'); startViewer(); });
+}
+
 // -----------------------------------------------------------------------------
-// Mode detection. Host requires BOTH localhost services to be reachable.
-// `?viewer` / `?host` URL flags force a mode (handy for testing on the host PC).
+// Mode detection. Returns:
+//   'host'   — forced via ?host
+//   'viewer' — forced via ?viewer, or this machine can't reach the local services
+//   'choose' — both local services are reachable, so ASK whether host or mod
+// (`?host` / `?viewer` URL flags skip the prompt — handy for testing.)
 // -----------------------------------------------------------------------------
 async function detectMode() {
   if (params.has('viewer')) return 'viewer';
@@ -113,7 +136,7 @@ async function detectMode() {
     canReachWS(`ws://${SB.host}:${SB.port}/`), // Streamer.bot WebSocket server
     canReachHTTP(`${YTMD.base}/metadata`),     // YTMDesktop companion server
   ]);
-  return sb && ytm ? 'host' : 'viewer';
+  return sb && ytm ? 'choose' : 'viewer';
 }
 
 // Resolve true if a WebSocket to `url` opens (used only to probe Streamer.bot).

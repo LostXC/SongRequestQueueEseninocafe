@@ -60,7 +60,7 @@ The page is fully readable — open DevTools and confirm the host tab only talks
 1. **`ws://127.0.0.1:8080`** — Streamer.bot, to hear channel-point redeems. *Local.*
 2. **`http://127.0.0.1:9863`** — YTMDesktop, to read the now-playing state and
    play songs. *Local.*
-3. **This page's own origin** (your Render URL) — to sync the queue to mods.
+3. **This page's own origin** (your app URL) — to sync the queue to mods.
 
 Plus read-only, no-key metadata lookups to identify songs: **MusicBrainz**,
 **Cover Art Archive**, **iTunes**, and a **YouTube** search (see
@@ -73,16 +73,25 @@ is required to push authoritative state — so a mod can never spoof the queue.
 
 ---
 
-## Deploy to Render
+## Deploy to Koyeb
+
+This is just a Node/Express app, so any Node host works. The steps below use
+[Koyeb](https://www.koyeb.com) (free, deploys from GitHub). Render works too —
+see the note at the end.
 
 1. Push this folder to a GitHub repo.
-2. In Render: **New → Web Service**, connect the repo. Runtime **Node**,
-   build `npm install`, start `npm start` (the included `render.yaml` sets these).
+2. In Koyeb: **Create Web Service → GitHub**, pick the repo. It auto-detects
+   Node and uses `npm install` (build) + `npm start` (run).
 3. Set environment variables:
    - `MOD_CODE` — the code you give your mods.
    - `HOST_SECRET` — a long random string only you (the streamer) know.
-   - `PORT` — leave unset; Render provides it.
-4. Every push to the repo auto-redeploys.
+   - `PORT` — leave unset; the host provides it and the server reads it.
+4. Deploy. You get a URL like `https://your-app-org.koyeb.app` — that single URL
+   is the whole app (host + viewer). Every push to the repo auto-redeploys.
+
+> **Render instead?** Identical flow: New → **Web Service** (not Static Site),
+> connect the repo, same env vars. The included `render.yaml` pre-fills the
+> build/start commands.
 
 ### Run locally (for development)
 
@@ -98,7 +107,7 @@ npm start                             # http://localhost:3000
 
 ## Streamer's first run
 
-1. Open your Render URL on the **streaming PC** (in Chrome/Edge).
+1. Open your app URL on the **streaming PC** (in Chrome/Edge).
 2. The tab detects host mode and asks for your **`HOST_SECRET`** once
    (saved in this browser only). Tip: open
    `https://your-app.onrender.com/?key=YOUR_HOST_SECRET` to skip the prompt.
@@ -112,7 +121,7 @@ npm start                             # http://localhost:3000
 
 ## Mods
 
-Open the same Render URL, enter the **mod code**, and you'll see the live queue:
+Open the same app URL, enter the **mod code**, and you'll see the live queue:
 
 - **Accept** — approve a request; it moves to *Up next*.
 - **Force** — play it immediately.
@@ -144,7 +153,7 @@ you can swap the strategy:
   search already uses. No API key.
 - **Optional (more robust):** YouTube Data API v3. Provide a key via
   `?ytKey=YOUR_KEY` once (saved locally) or set `localStorage['srq_yt_api_key']`.
-  Restrict the key to your Render domain in Google Cloud. When present it's
+  Restrict the key to your app domain in Google Cloud. When present it's
   preferred over the scrape.
 
 If no videoId can be found, the song is **still queued** but flagged

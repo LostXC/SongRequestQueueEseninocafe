@@ -97,6 +97,12 @@ button {
 button:hover { filter: brightness(1.08); }
 button:disabled { opacity: 0.5; cursor: default; }
 
+.btn-secondary { background: var(--panel-2); color: var(--text); }
+
+/* host-or-mod choice */
+.role-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 8px; }
+.role-buttons button { width: 100%; padding: 12px; font-size: 15px; }
+
 .error { color: #ff8a8a; font-size: 13px; }
 .big-code {
   font-size: 30px;

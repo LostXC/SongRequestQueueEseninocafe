@@ -1,0 +1,16 @@
+# Render blueprint. Connect this repo to Render and it picks up these settings.
+# You still set MOD_CODE and HOST_SECRET as environment variables in the Render
+# dashboard (they're marked sync:false so they aren't committed here).
+services:
+  - type: web
+    name: eseninocafe-song-queue
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MOD_CODE
+        sync: false
+      - key: HOST_SECRET
+        sync: false
+      # PORT is provided by Render automatically.

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eseninocafe — Song Request Queue</title>
+
+  <!--
+    Two external libraries, both loaded from public CDNs:
+      - @streamerbot/client : connects the HOST tab to Streamer.bot (ws://127.0.0.1:8080)
+      - socket.io           : connects the HOST tab to YouTube Music Desktop realtime
+    Mods never use either (their localhost connections fail and they fall into viewer mode).
+  -->
+  <script src="https://unpkg.com/@streamerbot/client/dist/streamerbot-client.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== Top bar ===== -->
+    <header id="topbar">
+      <div class="brand">Eseninocafe · Song Requests</div>
+      <div id="roleBadge" class="badge">…</div>
+    </header>
+
+    <!-- ===== Mode detection splash (shown while we figure out host vs viewer) ===== -->
+    <section id="detecting" class="panel center">
+      <div class="spinner"></div>
+      <p>Connecting…</p>
+    </section>
+
+    <!-- ===== Viewer login (mods) ===== -->
+    <section id="login" class="panel center hidden">
+      <h2>Mod access</h2>
+      <p class="muted">Enter the code to view and manage the queue.</p>
+      <form id="loginForm">
+        <input id="codeInput" type="password" placeholder="Mod code" autocomplete="off" />
+        <button type="submit">Enter</button>
+      </form>
+      <p id="loginError" class="error hidden">Wrong code, try again.</p>
+    </section>
+
+    <!-- ===== Host first-run setup (streamer only) ===== -->
+    <section id="hostSetup" class="panel hidden">
+      <h2>Host setup</h2>
+
+      <!-- Host secret entry (asked first; only once, then saved on this PC) -->
+      <div id="hostSecretBox" class="setup-step hidden">
+        <h3>1 · Host secret</h3>
+        <p class="muted">Paste your <code>HOST_SECRET</code> so this tab can push the queue. Saved on this PC only.</p>
+        <form id="hostSecretForm">
+          <input id="hostSecretInput" type="password" placeholder="HOST_SECRET" autocomplete="off" />
+          <button type="submit">Save</button>
+        </form>
+      </div>
+
+      <!-- YouTube Music authorization (revealed when the handshake starts) -->
+      <div id="ytmAuthBox" class="setup-step hidden">
+        <h3>2 · Authorize YouTube Music</h3>
+        <p class="muted">In the YouTube Music Desktop app, approve this code when it pops up:</p>
+        <div id="ytmAuthCode" class="big-code">…</div>
+        <p id="ytmAuthStatus" class="muted"></p>
+      </div>
+    </section>
+
+    <!-- ===== Host offline banner (viewers only) ===== -->
+    <div id="offlineBanner" class="banner hidden">
+      Host offline — playback paused. Eseninocafe needs to open the queue tab.
+    </div>
+
+    <!-- ===== Queue UI (shown to host AND authenticated mods) ===== -->
+    <main id="queueUI" class="hidden">
+
+      <div class="columns">
+        <!-- Review: awaiting a decision -->
+        <section class="column">
+          <h2>Review <span id="reviewCount" class="count">0</span></h2>
+          <div id="reviewList" class="card-list"></div>
+          <p id="reviewEmpty" class="muted empty">No songs waiting for review.</p>
+        </section>
+
+        <!-- Up next: approved, queued to play -->
+        <section class="column">
+          <h2>Up next <span id="playCount" class="count">0</span></h2>
+          <div id="playList" class="card-list"></div>
+          <p id="playEmpty" class="muted empty">Nothing queued.</p>
+        </section>
+      </div>
+    </main>
+
+    <!-- ===== Now-playing bar (pinned bottom, both modes) ===== -->
+    <footer id="player" class="hidden">
+      <img id="npArt" class="np-art" alt="" />
+      <div class="np-info">
+        <div id="npTitle" class="np-title">—</div>
+        <div id="npArtist" class="np-artist"></div>
+        <div class="np-progress">
+          <span id="npCurrent" class="np-time">0:00</span>
+          <div class="np-bar"><div id="npFill" class="np-fill"></div></div>
+          <span id="npDuration" class="np-time">0:00</span>
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Template for a single song card -->
+  <template id="songCardTemplate">
+    <div class="song-card">
+      <img class="sc-art" alt="" />
+      <div class="sc-info">
+        <div class="sc-title"></div>
+        <div class="sc-album"></div>
+        <div class="sc-meta">
+          <span class="sc-artist"></span>
+          <span class="sc-duration"></span>
+        </div>
+        <div class="sc-requester"></div>
+        <div class="sc-warn hidden">⚠ Couldn't find a playable YouTube match</div>
+      </div>
+      <div class="sc-actions"></div>
+    </div>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
+</html>

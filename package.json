@@ -1,0 +1,17 @@
+{
+  "name": "eseninocafe-song-request-queue",
+  "version": "1.0.0",
+  "description": "Twitch channel-point song request queue with remote mod review, controlling YouTube Music Desktop. Thin Render sync server + one inspectable web page (host + viewer modes).",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "license": "MIT"
+}

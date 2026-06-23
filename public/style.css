@@ -1,0 +1,206 @@
+/* -------------------------------------------------------------------------
+   Eseninocafe Song Request Queue — minimal styling.
+   Deliberately plain; a custom design comes later. Just keep it tidy.
+   ------------------------------------------------------------------------- */
+
+:root {
+  --bg: #15161a;
+  --panel: #1e2026;
+  --panel-2: #262932;
+  --text: #e9eaee;
+  --muted: #9a9ea8;
+  --accent: #7c5cff;
+  --green: #2fb774;
+  --red: #d12025;
+  --amber: #e0a82e;
+  --border: #2f323c;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  /* leave room for the pinned now-playing bar */
+  padding-bottom: 84px;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.center { text-align: center; }
+
+/* ---- top bar ---- */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.brand { font-weight: 600; letter-spacing: 0.2px; }
+.badge {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.badge.host { background: rgba(124, 92, 255, 0.18); color: #c9bcff; border-color: transparent; }
+.badge.viewer { background: rgba(47, 183, 116, 0.18); color: #8fe3bb; border-color: transparent; }
+
+/* ---- panels ---- */
+.panel {
+  max-width: 460px;
+  margin: 48px auto;
+  padding: 28px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.panel.center { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.panel h2 { margin: 0 0 4px; }
+.setup-step { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.setup-step:first-of-type { border-top: none; padding-top: 0; }
+.setup-step h3 { margin: 0 0 8px; font-size: 15px; }
+
+input {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+}
+input:focus { border-color: var(--accent); }
+form { display: flex; gap: 8px; margin-top: 8px; }
+form input { flex: 1; }
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.error { color: #ff8a8a; font-size: 13px; }
+.big-code {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  text-align: center;
+  padding: 14px;
+  background: var(--panel-2);
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+/* ---- spinner ---- */
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- offline banner ---- */
+.banner {
+  background: var(--red);
+  color: #fff;
+  text-align: center;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ---- queue columns ---- */
+#queueUI { max-width: 1100px; margin: 0 auto; padding: 20px; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 760px) { .columns { grid-template-columns: 1fr; } }
+
+.column h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.count {
+  font-size: 12px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+.card-list { display: flex; flex-direction: column; gap: 10px; }
+.empty { font-size: 13px; }
+
+/* ---- song card ---- */
+.song-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.song-card.unplayable { border-color: var(--amber); }
+.sc-art {
+  width: 56px; height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--panel-2);
+  flex-shrink: 0;
+}
+.sc-info { flex: 1; min-width: 0; }
+.sc-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-album { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-meta { display: flex; gap: 10px; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.sc-duration::before { content: "· "; }
+.sc-requester { font-size: 12px; color: var(--accent); margin-top: 4px; }
+.sc-requester::before { content: "requested by "; color: var(--muted); }
+.sc-warn { color: var(--amber); font-size: 12px; margin-top: 4px; }
+
+.sc-actions { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+.sc-actions button { padding: 6px 12px; font-size: 12px; min-width: 72px; }
+.btn-accept { background: var(--green); }
+.btn-force { background: var(--accent); }
+.btn-decline { background: var(--panel-2); color: var(--text); }
+
+/* ---- now-playing bar ---- */
+#player {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  z-index: 20;
+}
+.np-art { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; background: var(--panel-2); }
+.np-info { flex: 1; min-width: 0; }
+.np-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-artist { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-progress { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.np-time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; }
+.np-time:last-child { text-align: right; }
+.np-bar { flex: 1; height: 4px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.np-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 999px; }

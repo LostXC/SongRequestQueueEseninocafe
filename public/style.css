@@ -82,7 +82,7 @@ body.dark {
   border-radius: var(--radius);
 }
 .panel.center { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.panel h2 { margin: 0 0 4px; font-weight: 500; font-size: 24px; color: var(--top-fg); }
+.panel h2 { margin: 0 0 4px; font-weight: 500; font-size: 24px; color: #FFFFFF; }
 .setup-step { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .setup-step:first-of-type { border-top: none; padding-top: 0; }
 .setup-step h3 { margin: 0 0 8px; font-size: 15px; }

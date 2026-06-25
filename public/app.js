@@ -893,7 +893,7 @@ function setView(view) {
   const requests = view === 'requests';
   ui.requestsView.classList.toggle('hidden', !requests);
   ui.queueView.classList.toggle('hidden', requests);
-  ui.viewTitle.textContent = requests ? 'SONG REQUESTS' : 'SONG QUEUE';
+  ui.viewTitle.textContent = requests ? 'SONG REVIEWS' : 'SONG QUEUE';
   // the view-toggle icon shows the OTHER view (where the click takes you)
   ui.viewToggleIcon.src = requests ? '/icons/queue-list.svg' : '/icons/request-list.svg';
   // Accept-all is requests-only; the broom (remove-all) shows in both views and

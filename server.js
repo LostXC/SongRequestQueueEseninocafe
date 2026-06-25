@@ -110,6 +110,8 @@ function bearer(req) {
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// The UI icon set lives at the project root (icons/), shared with the design files.
+app.use('/icons', express.static(path.join(__dirname, 'icons')));
 
 // --- Mod login: exchange the shared MOD_CODE for a session token. -----------
 app.post('/login', (req, res) => {
@@ -182,7 +184,7 @@ app.get('/host/actions', (req, res) => {
 app.post('/action', (req, res) => {
   if (!sessions.has(bearer(req))) return res.status(401).json({ error: 'Not authenticated' });
   const { type, id } = req.body || {};
-  if (!['accept', 'force', 'decline'].includes(type) || typeof id !== 'string') {
+  if (!['accept', 'force', 'decline', 'moveup', 'movedown'].includes(type) || typeof id !== 'string') {
     return res.status(400).json({ error: 'Bad action' });
   }
   pendingActions.push({ actionId: crypto.randomBytes(8).toString('hex'), type, id });

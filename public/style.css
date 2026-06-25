@@ -15,17 +15,33 @@
   --amber: #e0a82e;
   --border: #2f323c;
   --radius: 10px;
+  --twitch-purple: #a644ff;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
+  font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--text);
-  /* leave room for the pinned now-playing bar */
-  padding-bottom: 84px;
+  /* leave room for the pinned now-playing player */
+  padding-bottom: 180px;
+
+  /* Theme: light is the base here; .dark overrides below. Only the top toolbar
+     and the page background react to the theme (per the design). */
+  --page-bg: #ffffff;
+  --top-fg: #000000;
+  --tbtn-hover: #dedede;
+  --tbtn-active: #cecece;
+  --icon-invert: 0;          /* black icons in light mode */
+  background: var(--page-bg);
+}
+body.dark {
+  --page-bg: #15161a;
+  --top-fg: #ffffff;
+  --tbtn-hover: #363636;
+  --tbtn-active: #404040;
+  --icon-invert: 1;          /* white icons in dark mode */
 }
 
 .hidden { display: none !important; }
@@ -135,78 +151,280 @@ button:disabled { opacity: 0.5; cursor: default; }
   font-weight: 500;
 }
 
-/* ---- queue columns ---- */
-#queueUI { max-width: 1100px; margin: 0 auto; padding: 20px; }
-.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-@media (max-width: 760px) { .columns { grid-template-columns: 1fr; } }
+/* ---- queue UI: sticky toolbar + two toggled views ---- */
+#queueUI { max-width: 1100px; margin: 0 auto; }
 
-.column h2 {
-  font-size: 16px;
-  margin: 0 0 12px;
+/* Sticky top row: title + role/theme on the left, bulk + view toggle on the right.
+   12px padding all round matches the views' margins; stays pinned on scroll. */
+#toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  padding: 12px 24px 12px 12px;
+  background: var(--page-bg);
 }
-.count {
-  font-size: 12px;
-  background: var(--panel-2);
-  color: var(--muted);
-  border-radius: 999px;
-  padding: 1px 9px;
+.toolbar-left, .toolbar-right { display: flex; align-items: center; }
+
+.view-title {
+  margin: 0;
+  height: 29px;
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 29px;
+  color: var(--top-fg);
+  white-space: nowrap;
 }
-.card-list { display: flex; flex-direction: column; gap: 10px; }
+
+/* gaps from the design: title →6px→ role →4px→ theme ; bulk →4px→ view toggle */
+.toolbar-left .role-indicator { margin-left: 6px; }
+.toolbar-left #themeToggleBtn { margin-left: 4px; }
+.toolbar-right .tbtn + .tbtn { margin-left: 4px; }
+
+/* 32×32 icon buttons, radius 6, themed hover/press backgrounds */
+.tbtn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.tbtn:hover { background: var(--tbtn-hover); }
+.tbtn:active { background: var(--tbtn-active); }
+
+/* top-row icons are black in light mode, white in dark (invert filter) */
+.top-icon {
+  width: 32px;
+  height: 32px;
+  display: block;
+  filter: invert(var(--icon-invert));
+}
+
+/* the two views; only one is shown at a time. 12px side+bottom margins. */
+/* 12px gap from the sticky toolbar (its 12px bottom padding) to the first card;
+   16px between cards. 12px side + bottom margins. */
+.view { padding: 6px 12px 12px; }
+.card-list { display: flex; flex-direction: column; gap: 16px; }
 .empty { font-size: 13px; }
 
-/* ---- song card ---- */
-.song-card {
+/* ---- song card ----
+   Ported from the MultichatOverlay "redeemed song request" card: a boiling
+   (animated) outline around a header (avatar / platform / username / timestamp +
+   "Redeemed Song Request") with the music card in its own bordered box below.
+   The white fill + black wobble come from the <canvas> borders (drawn in app.js),
+   so the content boxes themselves are transparent. */
+.sub-event-container {
+  position: relative;
   display: flex;
-  gap: 12px;
-  padding: 12px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  flex-direction: column;
+  width: 100%;
+  font-size: 18px;            /* base em for the header (platform icon, username) */
+  color: #000000;
 }
-.song-card.unplayable { border-color: var(--amber); }
-.sc-art {
-  width: 56px; height: 56px;
-  border-radius: 6px;
+
+.sub-card-wrapper, .sub-comment-wrapper { position: relative; width: 100%; }
+
+/* the boiling-border canvases sit 10px outside their box, behind the content */
+.sub-border-canvas, .sub-comment-border-canvas {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.sub-card-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  padding: 12px;
+  gap: 12px;
+  border-radius: 20px;
+}
+.sub-card-content.has-comment { padding-bottom: 8px; }
+
+.sub-info { display: flex; flex-direction: column; align-items: flex-start; flex-grow: 1; min-width: 0; }
+.sub-user-row { display: flex; flex-direction: row; align-items: center; width: 100%; height: 32px; }
+.sub-user-content { display: flex; flex-direction: row; align-items: center; min-width: 0; flex-shrink: 1; }
+
+.sc-avatar img { display: block; width: 32px; height: 32px; border-radius: 100px; flex-shrink: 0; }
+.sc-platform { display: flex; align-items: center; margin-left: 7px; margin-right: 3px; flex-shrink: 0; }
+.sc-platform img { display: block; width: 0.78em; height: 0.94em; object-fit: contain; }
+.sc-username {
+  display: flex; align-items: center;
+  font-weight: 600; font-size: 1em;
+  color: var(--twitch-purple);
+  flex-shrink: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sc-timestamp {
+  display: flex; align-items: center;
+  font-size: 0.888em; font-weight: 500; color: #000000;
+  margin-left: auto; flex-shrink: 0; padding-right: 8px;
+}
+.sub-description {
+  font-weight: 600; line-height: 1.2; color: #000000;
+  width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* small inline icon inside the description (channel-point cost) */
+.sub-inline-icon { height: 1.1em; width: auto; vertical-align: -0.2em; margin: 0 3px; }
+
+.sub-comment-content {
+  position: relative;
+  z-index: 1;
+  padding: 12px;
+  border-radius: 20px;
+  color: #000000;
+  min-height: 40px;
+}
+
+/* --- music card styles (also copied from the overlay) --- */
+.music-ui-container { display: flex; flex-direction: row; align-items: center; gap: 10px; width: 100%; }
+.music-ui-art {
+  width: 76px;
+  height: 76px;
+  border-radius: 10px;
   object-fit: cover;
-  background: var(--panel-2);
+  background: #ececec;
   flex-shrink: 0;
 }
-.sc-info { flex: 1; min-width: 0; }
-.sc-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-album { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-meta { display: flex; gap: 10px; font-size: 12px; color: var(--muted); margin-top: 2px; }
-.sc-duration::before { content: "· "; }
-.sc-requester { font-size: 12px; color: var(--accent); margin-top: 4px; }
-.sc-requester::before { content: "requested by "; color: var(--muted); }
-.sc-warn { color: var(--amber); font-size: 12px; margin-top: 4px; }
-
-.sc-actions { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
-.sc-actions button { padding: 6px 12px; font-size: 12px; min-width: 72px; }
-.btn-accept { background: var(--green); }
-.btn-force { background: var(--accent); }
-.btn-decline { background: var(--panel-2); color: var(--text); }
-
-/* ---- now-playing bar ---- */
-#player {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
+.music-ui-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0; /* critical for text truncation */
+}
+.music-ui-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #000000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.1;
+}
+.music-ui-album {
+  font-size: 18px;
+  font-weight: 500;
+  color: #000000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.music-ui-artist-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 20px;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  z-index: 20;
+  font-size: 18px;
+  font-weight: 500;
+  color: #000000;
+  white-space: nowrap;
+  overflow: hidden;
+  gap: 8px;
 }
-.np-art { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; background: var(--panel-2); }
-.np-info { flex: 1; min-width: 0; }
-.np-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.np-artist { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.np-progress { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-.np-time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; }
-.np-time:last-child { text-align: right; }
-.np-bar { flex: 1; height: 4px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
-.np-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 999px; }
+.music-ui-artist { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex-shrink: 1; }
+.music-ui-duration { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.music-ui-clock { width: 18px; height: 18px; object-fit: contain; }
+
+/* --- this project's extras (buttons get polished later) --- */
+.sc-warn { color: #000000; font-size: 18px; margin-right: 14px; font-weight: 500; }
+
+/* header right cluster: age display + the three icon action buttons */
+.sc-header-right { display: flex; align-items: center; margin-left: auto; flex-shrink: 0; }
+.sc-age { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+.sc-age-clock { width: 18px; height: 18px; object-fit: contain; }
+.sc-age-text { font-size: 18px; font-weight: 500; color: #000000; }
+
+.sc-actions { display: flex; align-items: center; gap: 4px; }
+.sc-icon-btn {
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: none; border-radius: 6px;
+  background: transparent; cursor: pointer;
+}
+
+/* Hardcoded to match the light-mode variables so they never turn dark */
+.sc-icon-btn:hover { background: #dedede; }
+.sc-icon-btn:active { background: #cecece; }
+
+.sc-icon-btn img { width: 32px; height: 32px; display: block; }
+
+/* ---- now-playing player — look copied 1:1 from the YT Music widget ----
+   The white fill + black wobble come from the boiling-border <canvas> (app.js),
+   so the content box itself is transparent. */
+#player {
+  position: fixed;
+  bottom: 12px; left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 20;
+  padding: 0 12px;       /* 12px side margins, like the views */
+  pointer-events: none;  /* don't block the empty area beside the card */
+}
+.np-card-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: calc(1100px - 24px); /* match the queue cards' content width */
+  height: auto;
+  pointer-events: auto;
+}
+.np-border-canvas {
+  position: absolute;
+  top: -10px; left: -10px;
+  z-index: 0;
+  pointer-events: none;
+}
+.np-card-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 12px;
+  gap: 10px;
+  width: 100%;
+  border-radius: 20px;
+  opacity: 0; /* the boiling-border animation fades this in/out */
+}
+#player .album-art {
+  display: block;
+  width: 76px; height: 76px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background-color: #e51e38;
+}
+#player .info-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  gap: 0;                 /* no gap between artist and the progress line */
+  padding-right: 4px;
+}
+/* title matches the song-request card title (.music-ui-title) */
+#player .title-wrapper { width: 100%; overflow: hidden; white-space: nowrap; margin-bottom: 3px; }
+#player .title { display: inline-block; font-weight: 600; font-size: 24px; line-height: 1.1; color: #000; will-change: transform; }
+/* artist matches the card artist (.music-ui-artist) */
+#player .artist-wrapper { width: 100%; overflow: hidden; white-space: nowrap; }
+#player .artist { display: inline-block; font-weight: 500; font-size: 18px; line-height: 1.2; color: #000; will-change: transform; }
+#player .progress-area { display: flex; flex-direction: row; align-items: center; width: 100%; height: 24px; gap: 8px; }
+/* duration texts match the artist line */
+#player .time { font-weight: 500; font-size: 18px; line-height: 1.2; color: #000; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+#player .progress-bar-container { position: relative; display: flex; align-items: center; flex-grow: 1; height: 24px; }
+#npProgressSvg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 1; overflow: visible; }
+.progress-thumb { position: absolute; left: 0; width: 14px; height: 14px; background-color: #000; border-radius: 50%; z-index: 2; transform: translateX(-50%); will-change: left; }

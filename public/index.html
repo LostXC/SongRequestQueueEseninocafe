@@ -14,9 +14,12 @@
   <script src="https://unpkg.com/@streamerbot/client/dist/streamerbot-client.js"></script>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
 
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
   <link rel="stylesheet" href="./style.css" />
 </head>
-<body>
+<body class="dark">
   <div id="app">
 
     <!-- ===== Top bar ===== -->
@@ -83,54 +86,124 @@
     <!-- ===== Queue UI (shown to host AND authenticated mods) ===== -->
     <main id="queueUI" class="hidden">
 
-      <div class="columns">
-        <!-- Review: awaiting a decision -->
-        <section class="column">
-          <h2>Review <span id="reviewCount" class="count">0</span></h2>
-          <div id="reviewList" class="card-list"></div>
-          <p id="reviewEmpty" class="muted empty">No songs waiting for review.</p>
-        </section>
+      <!-- Sticky top toolbar — stays pinned while the list scrolls under it -->
+      <header id="toolbar">
+        <div class="toolbar-left">
+          <h1 id="viewTitle" class="view-title">SONG REQUESTS</h1>
+          <!-- role indicator: host-role.svg / viewer-role.svg, set in app.js -->
+          <img id="roleIndicator" class="top-icon role-indicator" width="32" height="32" alt="role" />
+          <!-- light/dark theme toggle: sun.svg in light, moon.svg in dark -->
+          <button id="themeToggleBtn" class="tbtn" aria-label="Toggle light/dark" title="Toggle light/dark theme">
+            <img id="themeToggleIcon" class="top-icon" src="/icons/sun.svg" width="32" height="32" alt="" />
+          </button>
+        </div>
 
-        <!-- Up next: approved, queued to play -->
-        <section class="column">
-          <h2>Up next <span id="playCount" class="count">0</span></h2>
-          <div id="playList" class="card-list"></div>
-          <p id="playEmpty" class="muted empty">Nothing queued.</p>
-        </section>
-      </div>
+        <div class="toolbar-right">
+          <!-- accept every request in the list -->
+          <button id="acceptAllBtn" class="tbtn" aria-label="Accept all" title="Accept all requests">
+            <img class="top-icon" src="/icons/accept-all.svg" width="32" height="32" alt="" />
+          </button>
+          <!-- decline every request ("sweep the board") -->
+          <button id="declineAllBtn" class="tbtn" aria-label="Decline all" title="Decline all requests">
+            <img class="top-icon" src="/icons/broom.svg" width="32" height="32" alt="" />
+          </button>
+          <!-- switch between the requests view and the queue view -->
+          <button id="viewToggleBtn" class="tbtn" aria-label="Switch view" title="Switch view">
+            <img id="viewToggleIcon" class="top-icon" src="/icons/queue-list.svg" width="32" height="32" alt="" />
+          </button>
+        </div>
+      </header>
+
+      <!-- Song Requests view (review queue) -->
+      <section id="requestsView" class="view">
+        <div id="reviewList" class="card-list"></div>
+        <p id="reviewEmpty" class="muted empty">No songs waiting for review.</p>
+      </section>
+
+      <!-- Song Queue view (approved, up next) -->
+      <section id="queueView" class="view hidden">
+        <div id="playList" class="card-list"></div>
+        <p id="playEmpty" class="muted empty">Nothing queued.</p>
+      </section>
     </main>
 
-    <!-- ===== Now-playing bar (pinned bottom, both modes) ===== -->
+    <!-- ===== Now-playing player (pinned bottom) — look copied from the YT Music widget ===== -->
     <footer id="player" class="hidden">
-      <img id="npArt" class="np-art" alt="" />
-      <div class="np-info">
-        <div id="npTitle" class="np-title">—</div>
-        <div id="npArtist" class="np-artist"></div>
-        <div class="np-progress">
-          <span id="npCurrent" class="np-time">0:00</span>
-          <div class="np-bar"><div id="npFill" class="np-fill"></div></div>
-          <span id="npDuration" class="np-time">0:00</span>
+      <div class="np-card-wrapper">
+        <canvas class="np-border-canvas"></canvas>
+        <div class="np-card-content">
+          <img id="npArt" class="album-art" alt="" />
+          <div class="info-area">
+            <div class="title-wrapper"><div id="npTitle" class="title"></div></div>
+            <div class="artist-wrapper"><div id="npArtist" class="artist"></div></div>
+            <div class="progress-area">
+              <span id="npCurrent" class="time">0:00</span>
+              <div class="progress-bar-container" id="npProgressContainer">
+                <svg id="npProgressSvg" height="24">
+                  <path id="npProgressPath" fill="none" stroke="#000000" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <div id="npThumb" class="progress-thumb"></div>
+              </div>
+              <span id="npDuration" class="time">-0:00</span>
+            </div>
+          </div>
         </div>
       </div>
     </footer>
 
   </div>
 
-  <!-- Template for a single song card -->
+  <!-- Template for a single song card. Full "redeemed song request" card copied
+       from MultichatOverlay: boiling-border header (avatar/platform/username/
+       timestamp + description) + the music card in its own bordered box. -->
   <template id="songCardTemplate">
-    <div class="song-card">
-      <img class="sc-art" alt="" />
-      <div class="sc-info">
-        <div class="sc-title"></div>
-        <div class="sc-album"></div>
-        <div class="sc-meta">
-          <span class="sc-artist"></span>
-          <span class="sc-duration"></span>
+    <div class="sub-event-container song-card">
+      <!-- Header card -->
+      <div class="sub-card-wrapper">
+        <canvas class="sub-border-canvas"></canvas>
+        <div class="sub-card-content has-comment">
+          <div class="sub-info">
+            <div class="sub-user-row">
+              <div class="sub-user-content">
+                <span class="sc-avatar"></span>
+                <span class="sc-platform"><img src="/icons/platforms/twitch.png" alt="twitch" /></span>
+                <span class="sc-username"></span>
+              </div>
+              <div class="sc-header-right">
+                
+                <!-- The warning is moved right here! -->
+                <span class="sc-warn hidden">No YouTube match</span>
+
+                <span class="sc-age">
+                  <img class="sc-age-clock" src="/icons/clock.svg" alt="" />
+                  <span class="sc-age-text"></span>
+                </span>
+                <div class="sc-actions"></div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="sc-requester"></div>
-        <div class="sc-warn hidden">⚠ Couldn't find a playable YouTube match</div>
       </div>
-      <div class="sc-actions"></div>
+      <!-- Music card (comment) -->
+      <div class="sub-comment-wrapper">
+        <canvas class="sub-comment-border-canvas"></canvas>
+        <div class="sub-comment-content">
+          <div class="music-ui-container">
+            <img class="music-ui-art sc-art" alt="" />
+            <div class="music-ui-info">
+              <div class="music-ui-title sc-title"></div>
+              <div class="music-ui-album sc-album"></div>
+              <div class="music-ui-artist-row">
+                <span class="music-ui-artist sc-artist"></span>
+                <span class="music-ui-duration sc-duration">
+                  <img class="music-ui-clock" src="/icons/clock.svg" alt="" />
+                  <span class="sc-duration-text"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </template>
 

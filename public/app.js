@@ -47,6 +47,9 @@ const STORE = {
   ytApiKey: 'srq_yt_api_key',
 };
 
+// Theme preference key (used in boot() before the toolbar section, so it lives here).
+const THEME_KEY = 'srq_theme';
+
 // =============================================================================
 //  DOM references
 // =============================================================================
@@ -67,20 +70,34 @@ const ui = {
   hostSecretForm: el('hostSecretForm'),
   hostSecretInput: el('hostSecretInput'),
   offlineBanner: el('offlineBanner'),
+  topbar: el('topbar'),
   queueUI: el('queueUI'),
+  // toolbar
+  viewTitle: el('viewTitle'),
+  roleIndicator: el('roleIndicator'),
+  themeToggleBtn: el('themeToggleBtn'),
+  themeToggleIcon: el('themeToggleIcon'),
+  acceptAllBtn: el('acceptAllBtn'),
+  declineAllBtn: el('declineAllBtn'),
+  viewToggleBtn: el('viewToggleBtn'),
+  viewToggleIcon: el('viewToggleIcon'),
+  // views
+  requestsView: el('requestsView'),
+  queueView: el('queueView'),
   reviewList: el('reviewList'),
   reviewEmpty: el('reviewEmpty'),
-  reviewCount: el('reviewCount'),
   playList: el('playList'),
   playEmpty: el('playEmpty'),
-  playCount: el('playCount'),
   player: el('player'),
   npArt: el('npArt'),
   npTitle: el('npTitle'),
   npArtist: el('npArtist'),
   npCurrent: el('npCurrent'),
   npDuration: el('npDuration'),
-  npFill: el('npFill'),
+  npProgressContainer: el('npProgressContainer'),
+  npProgressSvg: el('npProgressSvg'),
+  npProgressPath: el('npProgressPath'),
+  npThumb: el('npThumb'),
   songCardTemplate: el('songCardTemplate'),
 };
 
@@ -91,6 +108,7 @@ let role = null;
 //  Boot: detect the mode, then run the matching path.
 // =============================================================================
 (async function boot() {
+  applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); // theme the bg from the start
   const decision = await detectMode();
   if (decision === 'host') return startHost();       // forced via ?host
   if (decision === 'viewer') return startViewer();   // can't host, or forced ?viewer
@@ -239,23 +257,30 @@ async function initHost() {
   localStorage.setItem(STORE.hostSecret, hostSecret);
 
   // 2) YouTube Music token — reuse the saved one, otherwise run the handshake.
+  //    If YTMD isn't reachable we DON'T block: the queue stays fully manageable
+  //    (accept/decline/reorder all work), just without playback until YTMD is up.
   ytmToken = localStorage.getItem(STORE.ytmToken);
   if (!ytmToken) {
     ui.hostSetup.classList.remove('hidden');
     el('ytmAuthBox').classList.remove('hidden');
-    ytmToken = await runYtmAuth();
-    localStorage.setItem(STORE.ytmToken, ytmToken);
+    try {
+      ytmToken = await runYtmAuth();
+      localStorage.setItem(STORE.ytmToken, ytmToken);
+    } catch (e) {
+      console.warn('[host] YouTube Music not reachable — running without playback control', e);
+      ytmToken = null;
+    }
   }
 
   // Setup done — show the queue and start the engine.
   ui.hostSetup.classList.add('hidden');
   enterQueueUI();
 
-  connectStreamerbot(); // hear channel-point redeems
-  connectYtmRealtime(); // read the live now-playing state
-  startHostHeartbeat(); // tell the server we're alive
-  startActionPolling(); // pick up mod actions to execute
-  scheduleSync(true);   // push initial (empty) state up
+  connectStreamerbot();             // hear channel-point redeems
+  if (ytmToken) connectYtmRealtime(); // read the live now-playing state (needs the token)
+  startHostHeartbeat();             // tell the server we're alive
+  startActionPolling();             // pick up mod actions to execute
+  scheduleSync(true);               // push initial (empty) state up
   renderHost();
 }
 
@@ -303,9 +328,13 @@ async function runYtmAuth() {
 // ---- Streamer.bot: hear channel-point redeems -------------------------------
 function connectStreamerbot() {
   // The browser talks to Streamer.bot over its local WebSocket server.
-  const client = new StreamerbotClient({ host: SB.host, port: SB.port });
-  // The existing "song request" reward already fires Twitch.RewardRedemption.
-  client.on('Twitch.RewardRedemption', (payload) => handleRedeem(payload.data));
+  try {
+    const client = new StreamerbotClient({ host: SB.host, port: SB.port });
+    // The existing "song request" reward already fires Twitch.RewardRedemption.
+    client.on('Twitch.RewardRedemption', (payload) => handleRedeem(payload.data));
+  } catch (e) {
+    console.warn('[host] Streamer.bot not reachable — no redeems will arrive', e);
+  }
 }
 
 // A redeem came in. If it's a "song request", identify the song and queue it
@@ -317,6 +346,11 @@ async function handleRedeem(data) {
   const query = (data.user_input || '').trim();
   const user = data.user_name || 'someone';
   if (!query) return; // nothing to search on
+
+  // Reward details for the card header ("Redeemed <title> <icon> <cost>").
+  const reward = data.reward || {};
+  const rewardImage = (reward.image && reward.image.url_2x)
+    || (reward.defaultImage && reward.defaultImage.url_2x) || '';
 
   // Identify the song (album art / artist / duration) using the same
   // MusicBrainz -> iTunes pipeline proven in the multichat widget.
@@ -338,6 +372,9 @@ async function handleRedeem(data) {
     album: info ? info.album : '',
     durationMs: info ? info.durationMs : 0,
     albumArt: info ? info.albumArt : '',
+    rewardTitle: reward.title || 'Song Request',
+    rewardImage,
+    cost: reward.cost || 0,
     createdAt: Date.now(),
   });
 
@@ -375,6 +412,12 @@ function hostApplyAction(type, id) {
     removeEverywhere();
     host.playQueue.unshift(item);
     playNow(item);
+  } else if (type === 'moveup' || type === 'movedown') {
+    // Reorder within the play queue by swapping with a neighbour.
+    const idx = host.playQueue.findIndex((i) => i.id === id);
+    const swap = type === 'moveup' ? idx - 1 : idx + 1;
+    if (idx === -1 || swap < 0 || swap >= host.playQueue.length) return;
+    [host.playQueue[idx], host.playQueue[swap]] = [host.playQueue[swap], host.playQueue[idx]];
   }
 
   scheduleSync(true);
@@ -546,71 +589,587 @@ function renderHost() {
   });
 }
 
+let toolbarInited = false;
+
 function enterQueueUI() {
+  ui.topbar.classList.add('hidden'); // the toolbar replaces the brand bar here
   ui.queueUI.classList.remove('hidden');
   ui.player.classList.remove('hidden');
+  // role indicator icon reflects who this tab is
+  ui.roleIndicator.src = role === 'host' ? '/icons/host-role.svg' : '/icons/viewer-role.svg';
+  ui.roleIndicator.title = role === 'host' ? 'Host' : 'Viewer';
+  ui.roleBadge.title = role === 'host' ? 'Host' : 'Viewer';
+  if (!toolbarInited) { initToolbar(); toolbarInited = true; }
+  ui.npArt.onerror = () => { ui.npArt.src = BLANK_PX; };
+  ui.npArt.src = BLANK_PX; // red placeholder until a song loads
+  setupPlayerBorder();      // boiling border around the player card
 }
 
+/* ---------------------------------------------------------------------------
+ *  PLAYER BOILING BORDER — animated begin (stroke draw + fade-in) and end
+ *  (scribble eraser wipe), ported from the YT Music widget (no skull). Driven
+ *  by the track state: it appears when a song plays, disappears when it stops.
+ * ------------------------------------------------------------------------- */
+const PLAYER_P = 10;                 // padding; matches .np-border-canvas offset (-10px)
+let playerBorder = null;             // { ctx, basePath, contentW, contentH, cw, ch, P, seed }
+let playerAnimState = 'HIDDEN';      // HIDDEN | APPEARING | VISIBLE | DISAPPEARING
+let playerAnimStart = performance.now();
+let playerEraserPts = null;
+let playerLoopStarted = false;
+
+// Measure the player card and (re)build its border canvas. Starts the single
+// animation loop the first time.
+function setupPlayerBorder() {
+  const wrap = document.querySelector('.np-card-wrapper');
+  const canvas = document.querySelector('.np-border-canvas');
+  if (!wrap || !canvas || wrap.offsetWidth === 0) return;
+  const contentW = wrap.offsetWidth, contentH = wrap.offsetHeight;
+  const P = PLAYER_P, R = BOIL_CFG.cornerRadius;
+  const cw = contentW + P * 2, ch = contentH + P * 2;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = cw * ratio; canvas.height = ch * ratio;
+  canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  const seed = playerBorder ? playerBorder.seed : Math.random() * 1000;
+  playerBorder = { ctx, basePath: boilBuildBasePath(contentW, contentH, R), contentW, contentH, cw, ch, P, seed };
+  playerEraserPts = null; // size changed → rebuild the eraser path
+  initPlayerEraserMask(contentW, contentH, P);
+  if (!playerLoopStarted) { playerLoopStarted = true; requestAnimationFrame(playerBorderTick); }
+}
+
+// Toggle the appear/disappear animation (same state logic as the widget).
+function setPlayerVisibility(visible) {
+  if (visible && (playerAnimState === 'HIDDEN' || playerAnimState === 'DISAPPEARING')) {
+    playerAnimState = 'APPEARING';
+    playerAnimStart = performance.now();
+    playerEraserPts = null;
+    const ep = document.getElementById('np-eraser-path');
+    if (ep) ep.setAttribute('d', '');
+  } else if (!visible && (playerAnimState === 'VISIBLE' || playerAnimState === 'APPEARING')) {
+    playerAnimState = 'DISAPPEARING';
+    playerAnimStart = performance.now();
+  }
+}
+
+// SVG mask the eraser "wipes" the player card with on the way out.
+function initPlayerEraserMask(W, H, P) {
+  let svg = document.getElementById('np-eraser-svg');
+  const x = -P - 120, y = -P - 120, w = W + P * 2 + 240, h = H + P * 2 + 240;
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'np-eraser-svg';
+    svg.style.cssText = 'position:absolute;width:0;height:0;pointer-events:none;';
+    document.body.appendChild(svg);
+  }
+  svg.innerHTML =
+    `<defs><mask id="np-eraser-mask" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}">` +
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="white" />` +
+    `<path id="np-eraser-path" fill="none" stroke="black" stroke-width="160" stroke-linecap="round" stroke-linejoin="round" />` +
+    `</mask></defs>`;
+  const wrap = document.querySelector('.np-card-wrapper');
+  if (wrap) { wrap.style.mask = 'url(#np-eraser-mask)'; wrap.style.webkitMask = 'url(#np-eraser-mask)'; }
+}
+
+// Left-to-right scribble eraser path, sized to the (often wide) player. Same
+// zigzag-and-jitter idea as the widget, swept horizontally so it covers any width.
+function getPlayerEraserPath(W, H, P) {
+  if (playerEraserPts) return playerEraserPts;
+  const startX = -P - 80, endX = W + P + 80, span = endX - startX;
+  const cy = H / 2, amp = H * 0.6 + 40;
+  const zigzags = Math.max(14, Math.round(W / 40));
+  const basePts = [];
+  for (let i = 0; i <= zigzags; i++) {
+    const t = i / zigzags;
+    const offset = (i % 2 === 0) ? 1 : -1;
+    const a = (i === 0 || i === zigzags) ? 0 : amp;
+    basePts.push({ x: startX + t * span, y: cy + offset * a });
+  }
+  const pts = [];
+  let totalLength = 0;
+  const detailSteps = 8;
+  for (let i = 0; i < basePts.length - 1; i++) {
+    const p1 = basePts[i], p2 = basePts[i + 1];
+    for (let j = 0; j < detailSteps; j++) {
+      const t = j / detailSteps;
+      const x = p1.x + (p2.x - p1.x) * t + (Math.random() - 0.5) * 15;
+      const y = p1.y + (p2.y - p1.y) * t + (Math.random() - 0.5) * 15;
+      if (pts.length > 0) { const l = pts[pts.length - 1]; totalLength += Math.hypot(x - l.x, y - l.y); }
+      pts.push({ x, y, dist: totalLength });
+    }
+  }
+  const lb = basePts[basePts.length - 1];
+  totalLength += Math.hypot(lb.x - pts[pts.length - 1].x, lb.y - pts[pts.length - 1].y);
+  pts.push({ x: lb.x, y: lb.y, dist: totalLength });
+  pts.totalLength = totalLength;
+  playerEraserPts = pts;
+  return pts;
+}
+
+const NP_STROKE_DUR = 1200, NP_FADE_DELAY = 300, NP_FADE_DUR = 500;
+const NP_TOTAL = Math.max(NP_STROKE_DUR, NP_FADE_DELAY + NP_FADE_DUR), NP_OUTRO = 1500;
+
+// One rAF loop, started once, drives the begin/end animation off playerAnimState.
+function playerBorderTick(ts) {
+  requestAnimationFrame(playerBorderTick);
+  const pb = playerBorder;
+  if (!pb) return;
+  const ctx = pb.ctx;
+  const contentEl = document.querySelector('.np-card-content');
+  let elapsed = ts - playerAnimStart;
+
+  if (playerAnimState === 'DISAPPEARING' && elapsed >= NP_OUTRO) {
+    playerAnimState = 'HIDDEN';
+    pb.seed = Math.random() * 1000;
+    playerEraserPts = null;
+  }
+
+  ctx.clearRect(-50, -50, pb.cw + 100, pb.ch + 100);
+
+  if (playerAnimState === 'HIDDEN') {
+    if (contentEl) contentEl.style.opacity = 0;
+    const ep = document.getElementById('np-eraser-path');
+    if (ep) ep.setAttribute('d', '');
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(pb.P, pb.P);
+  const deformed = boilDeformPath(pb.basePath, ts / 1000, pb.seed);
+  ctx.lineWidth = BOIL_CFG.strokeWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (playerAnimState === 'APPEARING') {
+    if (elapsed >= NP_TOTAL) { playerAnimState = 'VISIBLE'; elapsed = NP_TOTAL; }
+    const strokeT = Math.min(1, Math.max(0, elapsed / NP_STROKE_DUR));
+    const strokeProgress = 1 - Math.pow(1 - strokeT, 3); // ease-out
+    const fadeT = Math.min(1, Math.max(0, (elapsed - NP_FADE_DELAY) / NP_FADE_DUR));
+    const smoothFade = fadeT * fadeT * (3 - 2 * fadeT);
+
+    if (strokeProgress < 1) {
+      // progressive line-draw: a single dash longer than the path, revealed by offset
+      const perim = (pb.contentW + pb.contentH) * 2.5;
+      ctx.setLineDash([perim, perim]);
+      ctx.lineDashOffset = perim * (1 - strokeProgress);
+    } else {
+      ctx.setLineDash([]);
+    }
+
+    ctx.fillStyle = `rgba(255,255,255,${smoothFade})`;
+    ctx.strokeStyle = `rgba(255,255,255,${smoothFade})`;
+    boilTraceSmoothPath(ctx, deformed); ctx.fill(); ctx.stroke();
+    if (contentEl) contentEl.style.opacity = smoothFade;
+    ctx.strokeStyle = '#000000';
+    boilTraceSmoothPath(ctx, deformed); ctx.stroke();
+  } else { // VISIBLE or DISAPPEARING
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#ffffff';
+    boilTraceSmoothPath(ctx, deformed); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#000000';
+    boilTraceSmoothPath(ctx, deformed); ctx.stroke();
+    if (contentEl && contentEl.style.opacity !== '1') contentEl.style.opacity = 1;
+
+    if (playerAnimState === 'DISAPPEARING') {
+      const outroP = Math.max(0, Math.min(1, elapsed / NP_OUTRO));
+      const easeP = outroP < 0.5 ? 2 * outroP * outroP : 1 - Math.pow(-2 * outroP + 2, 2) / 2;
+      const pts = getPlayerEraserPath(pb.contentW, pb.contentH, pb.P);
+      const targetDist = easeP * pts.totalLength;
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length; i++) {
+        if (pts[i].dist <= targetDist) { d += ` L ${pts[i].x} ${pts[i].y}`; }
+        else {
+          const prev = pts[i - 1], cur = pts[i], seg = cur.dist - prev.dist;
+          if (seg > 0) { const t = (targetDist - prev.dist) / seg; d += ` L ${prev.x + (cur.x - prev.x) * t} ${prev.y + (cur.y - prev.y) * t}`; }
+          break;
+        }
+      }
+      const ep = document.getElementById('np-eraser-path');
+      if (ep) { ep.setAttribute('d', d); ep.setAttribute('transform', `translate(${(Math.random() - 0.5) * 2},${(Math.random() - 0.5) * 2})`); }
+      // erase the border canvas too (the mask handles the content)
+      ctx.globalCompositeOperation = 'destination-out';
+      const p2d = new Path2D(d);
+      ctx.save();
+      ctx.translate((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+      ctx.lineWidth = 140; ctx.stroke(p2d);
+      ctx.lineWidth = 160; ctx.stroke(p2d);
+      ctx.restore();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+  ctx.restore();
+}
+
+// Show the player when a song is playing/buffering; hide (debounced) when it
+// stops — same trigger timing as the widget.
+let playerHideTimer = null;
+function handlePlayerVisibility(visible) {
+  clearTimeout(playerHideTimer);
+  if (visible) setPlayerVisibility(true);
+  else playerHideTimer = setTimeout(() => setPlayerVisibility(false), 400);
+}
+
+// The queues as last rendered — used by the bulk Accept-all / Remove-all buttons.
+let currentReview = [];
+let currentPlay = [];
+
 function render(s) {
-  renderColumn(ui.reviewList, ui.reviewEmpty, ui.reviewCount, s.reviewQueue || [], 'review');
-  renderColumn(ui.playList, ui.playEmpty, ui.playCount, s.playQueue || [], 'play');
+  currentReview = s.reviewQueue || [];
+  currentPlay = s.playQueue || [];
+  renderList(ui.reviewList, ui.reviewEmpty, currentReview, 'review');
+  renderList(ui.playList, ui.playEmpty, currentPlay, 'play');
   updateNowPlaying(s.nowPlaying || null);
   // Mods see a banner when the host is offline; the host never shows it.
   ui.offlineBanner.classList.toggle('hidden', role === 'host' || !!s.hostConnected);
 }
 
-function renderColumn(listEl, emptyEl, countEl, items, column) {
-  countEl.textContent = items.length;
+// Keyed reconciliation: reuse existing card elements across renders so their
+// boiling-border animation keeps running. Only build new cards and drop gone
+// ones — re-appending an existing element just reorders it (no rebuild).
+const cardCache = { review: new Map(), play: new Map() };
+
+function renderList(listEl, emptyEl, items, column) {
+  const cache = cardCache[column];
+  const seen = new Set();
+  items.forEach((item, i) => {
+    seen.add(item.id);
+    let card = cache.get(item.id);
+    if (!card) { card = buildCard(item, column); cache.set(item.id, card); }
+    // Only touch the DOM when this card isn't already in the right slot — avoids
+    // re-appending every card each render (which churns layout + disturbs clicks).
+    if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
+    if (!card._bordersReady) setupCardBorders(card); // (re)try until it has a size
+  });
+  for (const [id, card] of cache) {
+    if (!seen.has(id)) { unregisterCardBorders(card); card.remove(); cache.delete(id); }
+  }
   emptyEl.classList.toggle('hidden', items.length > 0);
-  listEl.innerHTML = '';
-  for (const item of items) listEl.appendChild(buildCard(item, column));
 }
 
-// Build one song card. Visual structure mirrors the existing widget's music card:
-// album art, title, album, artist, duration.
+// Re-measure all card borders after web fonts load and on resize (their pixel
+// sizes change, and the boiling canvas is sized to the measured box).
+let _resizeTimer = null;
+function resizeAllCardBorders() {
+  for (const cache of [cardCache.review, cardCache.play]) {
+    for (const card of cache.values()) if (card.isConnected) setupCardBorders(card);
+  }
+  setupPlayerBorder();
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(resizeAllCardBorders);
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(resizeAllCardBorders, 150);
+});
+
+/* =============================================================================
+ *  TOOLBAR — theme toggle, view toggle, bulk Accept-all / Decline-all
+ * ========================================================================== */
+
+// Light/dark only affects the toolbar foreground + the page background.
+// Icon shown: sun in light mode, moon in dark mode (per the design).
+function applyTheme(theme) {
+  const dark = theme === 'dark';
+  document.body.classList.toggle('dark', dark);
+  if (ui.themeToggleIcon) ui.themeToggleIcon.src = dark ? '/icons/moon.svg' : '/icons/sun.svg';
+}
+function toggleTheme() {
+  const next = document.body.classList.contains('dark') ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+}
+
+// 'requests' shows the review queue; 'queue' shows the approved play queue.
+let currentView = 'requests';
+function setView(view) {
+  currentView = view;
+  const requests = view === 'requests';
+  ui.requestsView.classList.toggle('hidden', !requests);
+  ui.queueView.classList.toggle('hidden', requests);
+  ui.viewTitle.textContent = requests ? 'SONG REQUESTS' : 'SONG QUEUE';
+  // the view-toggle icon shows the OTHER view (where the click takes you)
+  ui.viewToggleIcon.src = requests ? '/icons/queue-list.svg' : '/icons/request-list.svg';
+  // Accept-all is requests-only; the broom (remove-all) shows in both views and
+  // clears whichever list is showing.
+  ui.acceptAllBtn.classList.toggle('hidden', !requests);
+  ui.declineAllBtn.classList.remove('hidden');
+  // Cards built while their view was hidden have zero size, so their boiling
+  // borders weren't registered — set them up now that the view is visible.
+  resizeAllCardBorders();
+}
+
+// Bulk actions run the normal per-item action for every request (snapshot first,
+// since the host mutates the queue as each one is applied).
+function acceptAll() { for (const item of currentReview.slice()) onAction('accept', item.id); }
+// The broom clears whichever list is currently shown.
+function declineAll() {
+  const list = currentView === 'queue' ? currentPlay : currentReview;
+  for (const item of list.slice()) onAction('decline', item.id);
+}
+
+function initToolbar() {
+  ui.themeToggleBtn.addEventListener('click', toggleTheme);
+  ui.viewToggleBtn.addEventListener('click', () => setView(currentView === 'requests' ? 'queue' : 'requests'));
+  ui.acceptAllBtn.addEventListener('click', acceptAll);
+  ui.declineAllBtn.addEventListener('click', declineAll);
+  setView('requests');
+}
+
+/* ---------------------------------------------------------------------------
+ *  BOILING BORDER — animated wobbling outline, ported verbatim from the
+ *  MultichatOverlay. A single rAF loop redraws every registered card canvas;
+ *  disconnected canvases drop out automatically.
+ * ------------------------------------------------------------------------- */
+const Simplex3D = (function () {
+  const F3 = 1.0 / 3.0, G3 = 1.0 / 6.0;
+  const p = new Uint8Array([151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180]);
+  const perm = new Uint8Array(512), permMod12 = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) { perm[i] = p[i & 255]; permMod12[i] = (perm[i] % 12); }
+  function grad(hash, x, y, z) {
+    const h = hash & 15; const u = h < 8 ? x : y, v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+  }
+  return function (xin, yin, zin) {
+    let n0, n1, n2, n3;
+    const s = (xin + yin + zin) * F3; const i = Math.floor(xin + s), j = Math.floor(yin + s), k = Math.floor(zin + s);
+    const t = (i + j + k) * G3; const X0 = i - t, Y0 = j - t, Z0 = k - t;
+    const x0 = xin - X0, y0 = yin - Y0, z0 = zin - Z0;
+    let i1, j1, k1, i2, j2, k2;
+    if (x0 >= y0) {
+      if (y0 >= z0) { i1=1;j1=0;k1=0;i2=1;j2=1;k2=0; } else if (x0 >= z0) { i1=1;j1=0;k1=0;i2=1;j2=0;k2=1; } else { i1=0;j1=0;k1=1;i2=1;j2=0;k2=1; }
+    } else {
+      if (y0 < z0) { i1=0;j1=0;k1=1;i2=0;j2=1;k2=1; } else if (x0 < z0) { i1=0;j1=1;k1=0;i2=0;j2=1;k2=1; } else { i1=0;j1=1;k1=0;i2=1;j2=1;k2=0; }
+    }
+    const x1=x0-i1+G3, y1=y0-j1+G3, z1=z0-k1+G3;
+    const x2=x0-i2+2.0*G3, y2=y0-j2+2.0*G3, z2=z0-k2+2.0*G3;
+    const x3=x0-1.0+3.0*G3, y3=y0-1.0+3.0*G3, z3=z0-1.0+3.0*G3;
+    const ii=i&255, jj=j&255, kk=k&255;
+    let t0=0.6-x0*x0-y0*y0-z0*z0; if(t0<0) n0=0.0; else { t0*=t0; n0=t0*t0*grad(permMod12[ii+perm[jj+perm[kk]]],x0,y0,z0); }
+    let t1=0.6-x1*x1-y1*y1-z1*z1; if(t1<0) n1=0.0; else { t1*=t1; n1=t1*t1*grad(permMod12[ii+i1+perm[jj+j1+perm[kk+k1]]],x1,y1,z1); }
+    let t2=0.6-x2*x2-y2*y2-z2*z2; if(t2<0) n2=0.0; else { t2*=t2; n2=t2*t2*grad(permMod12[ii+i2+perm[jj+j2+perm[kk+k2]]],x2,y2,z2); }
+    let t3=0.6-x3*x3-y3*y3-z3*z3; if(t3<0) n3=0.0; else { t3*=t3; n3=t3*t3*grad(permMod12[ii+1+perm[jj+1+perm[kk+1]]],x3,y3,z3); }
+    return 32.0*(n0+n1+n2+n3);
+  };
+})();
+
+const BOIL_CFG = { cornerRadius: 20, strokeWidth: 7, noiseFreq: 4.2, noiseCoordScale: 0.006, noiseTimeScale: 1.0, noiseAmp: 1.5, divW: 200, divH: 60, divCorner: 10, padding: 10 };
+function boilBuildBasePath(W, H, R) {
+  const pts = []; const { divW, divH, divCorner } = BOIL_CFG;
+  for (let i=0; i<divW; i++) pts.push({ x: R+(W-2*R)*(i/divW), y: 0 });
+  for (let i=0; i<divCorner; i++) pts.push({ x: W-R+R*Math.cos(-Math.PI/2+(Math.PI/2)*(i/divCorner)), y: R+R*Math.sin(-Math.PI/2+(Math.PI/2)*(i/divCorner)) });
+  for (let i=0; i<divH; i++) pts.push({ x: W, y: R+(H-2*R)*(i/divH) });
+  for (let i=0; i<divCorner; i++) pts.push({ x: W-R+R*Math.cos((Math.PI/2)*(i/divCorner)), y: H-R+R*Math.sin((Math.PI/2)*(i/divCorner)) });
+  for (let i=0; i<divW; i++) pts.push({ x: W-R-(W-2*R)*(i/divW), y: H });
+  for (let i=0; i<divCorner; i++) pts.push({ x: R+R*Math.cos(Math.PI/2+(Math.PI/2)*(i/divCorner)), y: H-R+R*Math.sin(Math.PI/2+(Math.PI/2)*(i/divCorner)) });
+  for (let i=0; i<divH; i++) pts.push({ x: 0, y: H-R-(H-2*R)*(i/divH) });
+  for (let i=0; i<divCorner; i++) pts.push({ x: R+R*Math.cos(Math.PI+(Math.PI/2)*(i/divCorner)), y: R+R*Math.sin(Math.PI+(Math.PI/2)*(i/divCorner)) });
+  return pts;
+}
+function boilDeformPath(base, time, seed) {
+  const freq = BOIL_CFG.noiseFreq * BOIL_CFG.noiseCoordScale, t = time * BOIL_CFG.noiseTimeScale;
+  return base.map(p => ({ x: p.x + Simplex3D(p.x*freq+seed, p.y*freq+seed, t) * BOIL_CFG.noiseAmp, y: p.y + Simplex3D(p.x*freq+seed+99.9, p.y*freq+seed+99.9, t) * BOIL_CFG.noiseAmp }));
+}
+function boilTraceSmoothPath(c, pts) {
+  if (pts.length < 3) return; c.beginPath(); let p1 = pts[0]; c.moveTo((pts[pts.length-1].x+p1.x)/2, (pts[pts.length-1].y+p1.y)/2);
+  for (let i=0; i<pts.length; i++) { p1 = pts[i]; const p2 = pts[(i+1)%pts.length]; c.quadraticCurveTo(p1.x, p1.y, (p1.x+p2.x)/2, (p1.y+p2.y)/2); }
+  c.closePath();
+}
+
+// Registry of card canvases + one shared animation loop.
+const boilEntries = new Set();
+function registerBoil(canvas, contentW, contentH, bottomExtension, strokeColor) {
+  unregisterBoil(canvas);
+  const P = BOIL_CFG.padding, R = BOIL_CFG.cornerRadius;
+  const cw = contentW + P * 2, ch = contentH + P * 2 + bottomExtension;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = cw * ratio; canvas.height = ch * ratio;
+  canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  const entry = { canvas, ctx, P, cw, ch, seed: Math.random() * 1000, stroke: strokeColor || '#000000', basePath: boilBuildBasePath(contentW, contentH + bottomExtension, R) };
+  canvas._boilEntry = entry;
+  boilEntries.add(entry);
+}
+function unregisterBoil(canvas) {
+  if (canvas && canvas._boilEntry) { boilEntries.delete(canvas._boilEntry); canvas._boilEntry = null; }
+}
+function unregisterCardBorders(card) { card.querySelectorAll('canvas').forEach(unregisterBoil); }
+
+// Measure a card's two boxes and (re)register their boiling canvases. The header
+// border extends 26px down so it visually connects with the music card below.
+function setupCardBorders(card) {
+  const headerWrap = card.querySelector('.sub-card-wrapper');
+  if (!headerWrap || headerWrap.offsetWidth === 0) return; // hidden — retried later
+  registerBoil(card.querySelector('.sub-border-canvas'), headerWrap.offsetWidth, headerWrap.offsetHeight, 26, '#000000');
+  const commentWrap = card.querySelector('.sub-comment-wrapper');
+  if (commentWrap) registerBoil(card.querySelector('.sub-comment-border-canvas'), commentWrap.offsetWidth, commentWrap.offsetHeight, 0, '#000000');
+  card._bordersReady = true;
+}
+
+function boilTick(ts) {
+  for (const e of boilEntries) {
+    if (!e.canvas.isConnected) { boilEntries.delete(e); continue; }
+    const ctx = e.ctx;
+    ctx.clearRect(0, 0, e.cw, e.ch);
+    ctx.save();
+    ctx.translate(e.P, e.P);
+    const deformed = boilDeformPath(e.basePath, ts / 1000, e.seed);
+    ctx.fillStyle = '#ffffff';
+    boilTraceSmoothPath(ctx, deformed); ctx.fill();
+    ctx.strokeStyle = e.stroke; ctx.lineWidth = BOIL_CFG.strokeWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    boilTraceSmoothPath(ctx, deformed); ctx.stroke();
+    ctx.restore();
+  }
+  requestAnimationFrame(boilTick);
+}
+requestAnimationFrame(boilTick);
+
+/* ---------------------------------------------------------------------------
+ *  Card header helpers (avatar, channel-point icon, timestamp)
+ * ------------------------------------------------------------------------- */
+// Twitch avatar via decapi (no key); dicebear fallback for unknown users.
+const avatarCache = new Map();
+async function GetAvatar(username) {
+  if (username && avatarCache.has(username)) return avatarCache.get(username);
+  if (username) {
+    try {
+      const r = await fetch('https://decapi.me/twitch/avatar/' + encodeURIComponent(username));
+      if (r.ok) { const t = (await r.text()).trim(); if (t.startsWith('http')) { avatarCache.set(username, t); return t; } }
+    } catch (_) {}
+  }
+  return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(username || 'anon')}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
+}
+
+// Outline an icon (white silhouette ring) so it reads on the white card. Ported
+// from the overlay; used for the channel-point cost icon in the description.
+const _outlineCache = new Map();
+function makeOutlinedIcon(srcUrl, outlinePx = 5, outlineColor = '#000') {
+  const key = `${srcUrl}|${outlinePx}|${outlineColor}`;
+  if (_outlineCache.has(key)) return _outlineCache.get(key);
+  const promise = new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight, pad = outlinePx + 2;
+      const cw = w + pad * 2, ch = h + pad * 2;
+      const sil = document.createElement('canvas'); sil.width = cw; sil.height = ch;
+      const sx = sil.getContext('2d');
+      sx.drawImage(img, pad, pad, w, h);
+      sx.globalCompositeOperation = 'source-in';
+      sx.fillStyle = outlineColor; sx.fillRect(0, 0, cw, ch);
+      const out = document.createElement('canvas'); out.width = cw; out.height = ch;
+      const ox = out.getContext('2d');
+      for (let a = 0; a < 360; a += 12) ox.drawImage(sil, Math.round(Math.cos(a*Math.PI/180)*outlinePx), Math.round(Math.sin(a*Math.PI/180)*outlinePx));
+      ox.drawImage(img, pad, pad, w, h);
+      try { resolve(out.toDataURL()); } catch (_) { resolve(srcUrl); }
+    };
+    img.onerror = () => resolve(srcUrl);
+    img.src = srcUrl;
+  });
+  _outlineCache.set(key, promise);
+  return promise;
+}
+
+// Compact "time since requested" like 5s / 3m / 2h / 1d.
+function formatAge(ts) {
+  const s = Math.max(0, Math.floor((Date.now() - (ts || Date.now())) / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h';
+  return Math.floor(h / 24) + 'd';
+}
+// Keep the age labels ticking up while cards stay on screen (once a second).
+setInterval(() => {
+  document.querySelectorAll('.sc-age-text').forEach((el) => {
+    if (el.dataset.ts) el.textContent = formatAge(Number(el.dataset.ts));
+  });
+}, 1000);
+
+const BLANK_PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+// Build one "redeemed song request" card (returns the element). Text is filled
+// synchronously; avatar + cost icon load in async without changing the layout.
 function buildCard(item, column) {
-  const node = ui.songCardTemplate.content.cloneNode(true);
-  const card = node.querySelector('.song-card');
+  const card = ui.songCardTemplate.content.firstElementChild.cloneNode(true);
 
-  const art = node.querySelector('.sc-art');
-  if (item.albumArt) { art.src = item.albumArt; } else { art.style.visibility = 'hidden'; }
-  art.onerror = () => { art.style.visibility = 'hidden'; };
+  // --- header ---
+  card.querySelector('.sc-username').textContent = item.user || 'someone';
 
-  node.querySelector('.sc-title').textContent = item.title || item.query || '(unknown)';
+  // age ("3m") — ticks up via the interval above
+  const ageEl = card.querySelector('.sc-age-text');
+  const created = item.createdAt || Date.now();
+  ageEl.textContent = formatAge(created);
+  ageEl.dataset.ts = created;
 
-  const albumEl = node.querySelector('.sc-album');
+  const avatarSpan = card.querySelector('.sc-avatar');
+  GetAvatar(item.user).then((url) => { avatarSpan.innerHTML = `<img class="avatar" src="${url}" alt="" />`; });
+
+  // --- music card ---
+  const art = card.querySelector('.sc-art');
+  art.src = item.albumArt || BLANK_PX;
+  art.onerror = () => { art.src = BLANK_PX; };
+
+  card.querySelector('.sc-title').textContent = item.title || item.query || '(unknown)';
+  const albumEl = card.querySelector('.sc-album');
   if (item.album) albumEl.textContent = item.album; else albumEl.remove();
+  card.querySelector('.sc-artist').textContent = item.artist || '';
 
-  node.querySelector('.sc-artist').textContent = item.artist || '';
-  node.querySelector('.sc-duration').textContent = item.durationMs ? FormatSongDuration(item.durationMs) : '';
-  node.querySelector('.sc-requester').textContent = item.user || '';
+  const durationEl = card.querySelector('.sc-duration');
+  if (item.durationMs) card.querySelector('.sc-duration-text').textContent = FormatSongDuration(item.durationMs);
+  else durationEl.remove();
 
-  // Flag songs we couldn't resolve to a playable YouTube videoId.
   if (item.playable === false) {
     card.classList.add('unplayable');
-    node.querySelector('.sc-warn').classList.remove('hidden');
+    card.querySelector('.sc-warn').classList.remove('hidden');
   }
 
-  // Action buttons differ per column.
-  const actions = node.querySelector('.sc-actions');
+  // --- header action icons (left→right: accept, decline, force) ---
+  const actions = card.querySelector('.sc-actions');
+  const iconBtn = (icon, type, label) => {
+    const b = document.createElement('button');
+    b.className = 'sc-icon-btn';
+    b.title = label;
+    b.setAttribute('aria-label', label);
+    b.innerHTML = `<img src="/icons/${icon}" alt="" />`;
+    b.addEventListener('click', () => onAction(type, item.id));
+    return b;
+  };
+  // Copy the request as "Title by Artist" so the streamer can paste it into a
+  // search. Offered on unplayable cards where there's no one-click play.
+  const copyBtn = () => {
+    const b = document.createElement('button');
+    b.className = 'sc-icon-btn';
+    b.title = 'Copy “Title by Artist”';
+    b.setAttribute('aria-label', 'Copy song');
+    b.innerHTML = `<img src="/icons/copy.svg" alt="" />`;
+    b.addEventListener('click', () => {
+      const text = item.artist ? `${item.title} by ${item.artist}` : (item.title || item.query || '');
+      copyToClipboard(text);
+      b.title = 'Copied!';
+      setTimeout(() => { b.title = 'Copy “Title by Artist”'; }, 1500);
+    });
+    return b;
+  };
   if (column === 'review') {
-    actions.appendChild(actionButton('Accept', 'btn-accept', 'accept', item.id));
-    actions.appendChild(actionButton('Force', 'btn-force', 'force', item.id));
-    actions.appendChild(actionButton('Decline', 'btn-decline', 'decline', item.id));
+    if (item.playable === false) {
+      // Unplayable: no play — offer copy ("Title by Artist") + remove on the right.
+      actions.appendChild(iconBtn('trash-can.svg', 'decline', 'Remove'));
+      actions.appendChild(copyBtn());
+    } else {
+      actions.appendChild(iconBtn('accept.svg', 'accept', 'Accept'));
+      actions.appendChild(iconBtn('decline.svg', 'decline', 'decline'));
+      actions.appendChild(iconBtn('accept-force.svg', 'force', 'Force'));
+    }
   } else {
-    actions.appendChild(actionButton('Play now', 'btn-force', 'force', item.id));
-    actions.appendChild(actionButton('Remove', 'btn-decline', 'decline', item.id));
+    // Queue (left→right): move up, move down, remove, play now.
+    actions.appendChild(iconBtn('move-up.svg', 'moveup', 'Move up'));
+    actions.appendChild(iconBtn('move-down.svg', 'movedown', 'Move down'));
+    actions.appendChild(iconBtn('trash-can.svg', 'decline', 'Remove'));
+    actions.appendChild(iconBtn('accept-force.svg', 'force', 'Play now'));
   }
 
-  return node;
-}
-
-function actionButton(label, cls, type, id) {
-  const b = document.createElement('button');
-  b.textContent = label;
-  b.className = cls;
-  b.addEventListener('click', () => onAction(type, id));
-  return b;
+  return card;
 }
 
 // Route a button press: the host acts locally; a mod asks the server.
@@ -619,32 +1178,54 @@ function onAction(type, id) {
   else sendModAction(type, id);
 }
 
+// Copy text to the clipboard, with a fallback for older/insecure contexts.
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (_) {}
+  ta.remove();
+}
+
 /* =============================================================================
  *  NOW-PLAYING BAR — smooth progress, interpolated between state updates
  *  (same approach as the existing widget: tick locally, re-sync on updates).
  * ========================================================================== */
-const np = { secs: 0, dur: 0, playing: false, last: performance.now(), vid: null };
+const np = { secs: 0, dur: 0, playing: false, last: performance.now(), vid: null, scrollStart: null };
 
 function updateNowPlaying(n) {
   if (!n) {
-    ui.npTitle.textContent = '—';
-    ui.npArtist.textContent = '';
-    ui.npArt.removeAttribute('src');
-    np.playing = false; np.secs = 0; np.dur = 0; np.vid = null;
+    if (np.vid !== null) { ui.npTitle.textContent = ''; ui.npArtist.textContent = ''; ui.npArt.src = BLANK_PX; }
+    np.playing = false; np.secs = 0; np.dur = 0; np.vid = null; np.scrollStart = null;
+    handlePlayerVisibility(false); // nothing playing → animate the player out
     return;
   }
 
   const songChanged = n.videoId !== np.vid;
   if (songChanged) {
     np.vid = n.videoId;
-    ui.npTitle.textContent = n.title || '—';
+    ui.npTitle.textContent = n.title || '';
     ui.npArtist.textContent = n.artist || '';
-    if (n.albumArt) ui.npArt.src = n.albumArt; else ui.npArt.removeAttribute('src');
+    ui.npArt.src = n.albumArt || BLANK_PX;
+    np.scrollStart = null; // restart the title/artist scroll for the new song
   }
 
   np.dur = n.durationSeconds || 0;
   const wasPlaying = np.playing;
   np.playing = n.trackState === 1;
+
+  // Show the player while playing(1)/buffering(2); animate it out otherwise.
+  handlePlayerVisibility(n.trackState === 1 || n.trackState === 2);
 
   // Re-sync our local clock to the server progress on song/state change or drift.
   const serverSecs = n.progress || 0;
@@ -656,15 +1237,65 @@ function updateNowPlaying(n) {
   np.last = performance.now();
 }
 
-// rAF loop: advance the local clock while playing and paint the progress bar.
-function tickPlayer() {
+// Title/artist horizontal scroll when they overflow (ported from the widget):
+// pause, ease-scroll to the end, pause, snap back. `syncOverflow` keeps the
+// title and artist scrolling on the same clock so they line up.
+function getScrollOffset(overflow, syncOverflow, timeMs) {
+  if (overflow <= 0) return 0;
+  const speed = 40;
+  const scrollDur = (syncOverflow / speed) * 1000;
+  const myScrollDur = (overflow / speed) * 1000;
+  const pauseStart = 6000, pauseEnd = 6000;
+  const totalCycle = pauseStart + scrollDur + pauseEnd;
+  const t = timeMs % totalCycle;
+  if (t < pauseStart) return 0;
+  if (t >= pauseStart + scrollDur) return -overflow;
+  const scrollTime = t - pauseStart;
+  if (scrollTime >= myScrollDur) return -overflow;
+  const p = scrollTime / myScrollDur;
+  const ease = -(Math.cos(Math.PI * p) - 1) / 2;
+  return -(ease * overflow);
+}
+
+// rAF loop: interpolate progress, scroll the text, and draw the animated
+// sine-wave progress line + thumb — all 1:1 with the widget.
+function tickPlayer(ts) {
+  if (np.scrollStart === null) np.scrollStart = ts;
+  const timeMs = ts - np.scrollStart;
+
+  const titleEl = ui.npTitle, artistEl = ui.npArtist;
+  const titleOverflow = Math.max(0, titleEl.scrollWidth - titleEl.parentElement.clientWidth);
+  const artistOverflow = Math.max(0, artistEl.scrollWidth - artistEl.parentElement.clientWidth);
+  const maxOverflow = Math.max(titleOverflow, artistOverflow);
+  titleEl.style.transform = `translateX(${getScrollOffset(titleOverflow, maxOverflow, timeMs)}px)`;
+  artistEl.style.transform = `translateX(${getScrollOffset(artistOverflow, maxOverflow, timeMs)}px)`;
+
   let secs = np.secs;
   if (np.playing && np.dur > 0) secs += (performance.now() - np.last) / 1000;
   secs = Math.max(0, Math.min(np.dur || secs, secs));
+  const remaining = Math.max(0, np.dur - secs);
+  const progress = np.dur > 0 ? secs / np.dur : 0;
 
   ui.npCurrent.textContent = ConvertSeconds(secs);
-  ui.npDuration.textContent = ConvertSeconds(np.dur);
-  ui.npFill.style.width = np.dur > 0 ? `${(secs / np.dur) * 100}%` : '0%';
+  ui.npDuration.textContent = np.dur > 0 ? '-' + ConvertSeconds(remaining) : '-0:00';
+
+  const container = ui.npProgressContainer;
+  if (container) {
+    const thumbX = progress * container.clientWidth;
+    ui.npThumb.style.left = thumbX + 'px';
+    ui.npProgressSvg.style.width = Math.max(0, thumbX + 10) + 'px';
+    let d = 'M 0 12';
+    if (thumbX > 0) {
+      const segments = Math.max(10, Math.floor(thumbX / 2));
+      d = '';
+      for (let i = 0; i <= segments; i++) {
+        const px = (i / segments) * thumbX;
+        const py = 12 + Math.sin((px * 0.15) + (timeMs * 0.004)) * 1.5;
+        d += (i === 0 ? 'M ' : ' L ') + px + ' ' + py;
+      }
+    }
+    ui.npProgressPath.setAttribute('d', d);
+  }
 
   requestAnimationFrame(tickPlayer);
 }

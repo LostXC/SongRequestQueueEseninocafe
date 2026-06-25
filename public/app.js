@@ -410,7 +410,6 @@ function hostApplyAction(type, id) {
   } else if (type === 'force') {
     // Play immediately and put it at the front of the queue.
     removeEverywhere();
-    host.playQueue.unshift(item);
     playNow(item);
   } else if (type === 'moveup' || type === 'movedown') {
     // Reorder within the play queue by swapping with a neighbour.

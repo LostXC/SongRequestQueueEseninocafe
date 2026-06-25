@@ -291,7 +291,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .sub-comment-content {
   position: relative;
   z-index: 1;
-  padding: 12px 12px 12px 16px;
+  padding: 12px 16px 12px 12px;
   border-radius: 20px;
   color: #000000;
   min-height: 40px;

@@ -766,8 +766,7 @@ function playerBorderTick(ts) {
     }
 
     ctx.fillStyle = `rgba(255,255,255,${smoothFade})`;
-    ctx.strokeStyle = `rgba(255,255,255,${smoothFade})`;
-    boilTraceSmoothPath(ctx, deformed); ctx.fill(); ctx.stroke();
+    boilTraceSmoothPath(ctx, deformed); ctx.fill();
     if (contentEl) contentEl.style.opacity = smoothFade;
     ctx.strokeStyle = '#000000';
     boilTraceSmoothPath(ctx, deformed); ctx.stroke();

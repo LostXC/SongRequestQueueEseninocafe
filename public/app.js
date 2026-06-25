@@ -655,7 +655,7 @@ function setPlayerVisibility(visible) {
 // SVG mask the eraser "wipes" the player card with on the way out.
 function initPlayerEraserMask(W, H, P) {
   let svg = document.getElementById('np-eraser-svg');
-  const x = -P - 120, y = -P - 120, w = W + P * 2 + 240, h = H + P * 2 + 240;
+  const x = -2000, y = -2000, w = 4000, h = 4000;
   if (!svg) {
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.id = 'np-eraser-svg';
@@ -671,39 +671,48 @@ function initPlayerEraserMask(W, H, P) {
   if (wrap) { wrap.style.mask = 'url(#np-eraser-mask)'; wrap.style.webkitMask = 'url(#np-eraser-mask)'; }
 }
 
-// Left-to-right scribble eraser path, sized to the (often wide) player. Same
-// zigzag-and-jitter idea as the widget, swept horizontally so it covers any width.
+// Diagonal scribble eraser path, swept to cover any width.
 function getPlayerEraserPath(W, H, P) {
   if (playerEraserPts) return playerEraserPts;
-  const startX = -P - 80, endX = W + P + 80, span = endX - startX;
-  const cy = H / 2, amp = H * 0.6 + 40;
-  const zigzags = Math.max(14, Math.round(W / 40));
+  playerEraserPts = [];
+  const startX = -P - 80, startY = -P - 80;
+  const maxDim = Math.max(W, H) + P * 2 + 160;
+
   const basePts = [];
+  const zigzags = 24;
   for (let i = 0; i <= zigzags; i++) {
-    const t = i / zigzags;
-    const offset = (i % 2 === 0) ? 1 : -1;
-    const a = (i === 0 || i === zigzags) ? 0 : amp;
-    basePts.push({ x: startX + t * span, y: cy + offset * a });
+    let t = i / zigzags;
+    let bx = startX + t * maxDim;
+    let by = startY + t * maxDim;
+    let offset = (i % 2 === 0) ? 1 : -1;
+    let amp = 550 + Math.random() * 50;
+    if (i === 0 || i === zigzags) amp = 0;
+    let px = 0.707, py = -0.707;
+    basePts.push({ x: bx + px * amp * offset, y: by + py * amp * offset });
   }
-  const pts = [];
-  let totalLength = 0;
+
   const detailSteps = 8;
+  let totalLength = 0;
   for (let i = 0; i < basePts.length - 1; i++) {
-    const p1 = basePts[i], p2 = basePts[i + 1];
+    let p1 = basePts[i], p2 = basePts[i + 1];
     for (let j = 0; j < detailSteps; j++) {
-      const t = j / detailSteps;
-      const x = p1.x + (p2.x - p1.x) * t + (Math.random() - 0.5) * 15;
-      const y = p1.y + (p2.y - p1.y) * t + (Math.random() - 0.5) * 15;
-      if (pts.length > 0) { const l = pts[pts.length - 1]; totalLength += Math.hypot(x - l.x, y - l.y); }
-      pts.push({ x, y, dist: totalLength });
+      let t = j / detailSteps;
+      let x = p1.x + (p2.x - p1.x) * t + (Math.random() - 0.5) * 15;
+      let y = p1.y + (p2.y - p1.y) * t + (Math.random() - 0.5) * 15;
+      let pt = { x, y };
+      if (playerEraserPts.length > 0) {
+        let lastPt = playerEraserPts[playerEraserPts.length - 1];
+        totalLength += Math.hypot(x - lastPt.x, y - lastPt.y);
+      }
+      pt.dist = totalLength;
+      playerEraserPts.push(pt);
     }
   }
-  const lb = basePts[basePts.length - 1];
-  totalLength += Math.hypot(lb.x - pts[pts.length - 1].x, lb.y - pts[pts.length - 1].y);
-  pts.push({ x: lb.x, y: lb.y, dist: totalLength });
-  pts.totalLength = totalLength;
-  playerEraserPts = pts;
-  return pts;
+  let lastBase = basePts[basePts.length - 1];
+  totalLength += Math.hypot(lastBase.x - playerEraserPts[playerEraserPts.length - 1].x, lastBase.y - playerEraserPts[playerEraserPts.length - 1].y);
+  playerEraserPts.push({ x: lastBase.x, y: lastBase.y, dist: totalLength });
+  playerEraserPts.totalLength = totalLength;
+  return playerEraserPts;
 }
 
 const NP_STROKE_DUR = 1200, NP_FADE_DELAY = 300, NP_FADE_DUR = 500;
@@ -764,8 +773,8 @@ function playerBorderTick(ts) {
     boilTraceSmoothPath(ctx, deformed); ctx.stroke();
   } else { // VISIBLE or DISAPPEARING
     ctx.setLineDash([]);
-    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#ffffff';
-    boilTraceSmoothPath(ctx, deformed); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    boilTraceSmoothPath(ctx, deformed); ctx.fill();
     ctx.strokeStyle = '#000000';
     boilTraceSmoothPath(ctx, deformed); ctx.stroke();
     if (contentEl && contentEl.style.opacity !== '1') contentEl.style.opacity = 1;
@@ -1233,8 +1242,8 @@ function updateNowPlaying(n) {
   if (wasPlaying) localSecs += (performance.now() - np.last) / 1000;
   if (songChanged || np.playing !== wasPlaying || Math.abs(serverSecs - localSecs) > 2) {
     np.secs = serverSecs;
+    np.last = performance.now();
   }
-  np.last = performance.now();
 }
 
 // Title/artist horizontal scroll when they overflow (ported from the widget):

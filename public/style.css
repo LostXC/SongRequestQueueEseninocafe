@@ -82,7 +82,7 @@ body.dark {
   border-radius: var(--radius);
 }
 .panel.center { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.panel h2 { margin: 0 0 4px; }
+.panel h2 { margin: 0 0 4px; font-weight: 500; font-size: 24px; color: var(--top-fg); }
 .setup-step { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .setup-step:first-of-type { border-top: none; padding-top: 0; }
 .setup-step h3 { margin: 0 0 8px; font-size: 15px; }
@@ -98,7 +98,16 @@ input {
 }
 input:focus { border-color: var(--accent); }
 form { display: flex; gap: 8px; margin-top: 8px; }
-form input { flex: 1; }
+form .input-wrap { position: relative; flex: 1; display: flex; }
+form input { flex: 1; padding-right: 40px; }
+.eye-btn {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: transparent; padding: 6px; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.eye-btn:hover { background: transparent; filter: brightness(1.2); }
+.eye-icon { width: 20px; height: 20px; filter: invert(var(--icon-invert)); opacity: 0.5; }
+.eye-btn.open .eye-icon { opacity: 1; }
 
 button {
   background: var(--accent);
@@ -171,8 +180,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .view-title {
   margin: 0;
-  height: 29px;
-  font-weight: 600;
+  height: 24px;
+  font-weight: 500;
   font-size: 24px;
   line-height: 29px;
   color: var(--top-fg);
@@ -213,7 +222,7 @@ button:disabled { opacity: 0.5; cursor: default; }
    16px between cards. 12px side + bottom margins. */
 .view { padding: 6px 12px 12px; }
 .card-list { display: flex; flex-direction: column; gap: 16px; }
-.empty { font-size: 13px; }
+.empty { font-size: 18px; color: var(--top-fg); }
 
 /* ---- song card ----
    Ported from the MultichatOverlay "redeemed song request" card: a boiling
@@ -282,7 +291,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .sub-comment-content {
   position: relative;
   z-index: 1;
-  padding: 12px;
+  padding: 12px 12px 12px 16px;
   border-radius: 20px;
   color: #000000;
   min-height: 40px;

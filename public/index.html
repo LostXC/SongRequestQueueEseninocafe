@@ -49,7 +49,12 @@
       <h2>Mod access</h2>
       <p class="muted">Enter the code to view and manage the queue.</p>
       <form id="loginForm">
-        <input id="codeInput" type="password" placeholder="Mod code" autocomplete="off" />
+        <div class="input-wrap">
+          <input id="codeInput" type="password" placeholder="Mod code" autocomplete="off" />
+          <button type="button" class="eye-btn" onclick="const i=document.getElementById('codeInput'); i.type=i.type==='password'?'text':'password'; this.classList.toggle('open');" aria-label="Toggle password visibility" title="Show/Hide">
+            <img class="eye-icon" src="/icons/viewer-role.svg" alt="Show" />
+          </button>
+        </div>
         <button type="submit">Enter</button>
       </form>
       <p id="loginError" class="error hidden">Wrong code, try again.</p>
@@ -64,7 +69,12 @@
         <h3>1 · Host secret</h3>
         <p class="muted">Paste your <code>HOST_SECRET</code> so this tab can push the queue. Saved on this PC only.</p>
         <form id="hostSecretForm">
-          <input id="hostSecretInput" type="password" placeholder="HOST_SECRET" autocomplete="off" />
+          <div class="input-wrap">
+            <input id="hostSecretInput" type="password" placeholder="HOST_SECRET" autocomplete="off" />
+            <button type="button" class="eye-btn" onclick="const i=document.getElementById('hostSecretInput'); i.type=i.type==='password'?'text':'password'; this.classList.toggle('open');" aria-label="Toggle password visibility" title="Show/Hide">
+              <img class="eye-icon" src="/icons/viewer-role.svg" alt="Show" />
+            </button>
+          </div>
           <button type="submit">Save</button>
         </form>
       </div>

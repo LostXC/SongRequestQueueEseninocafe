@@ -357,16 +357,9 @@ async function handleRedeem(data) {
   const info = await GetSongInfo(query).catch(() => null);
 
   // Resolve a YouTube Music videoId so we can actually play it.
-  let videoId = null;
-  const m = query.match(/(?:v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
-  if (m) {
-    videoId = m[1];
-  } else {
-    const seedTitle = info ? info.title : query;
-    const seedArtist = info ? info.artist : '';
-    const seedAlbum = info ? info.album : '';
-    videoId = await ResolveYouTubeVideoId(seedTitle, seedArtist, seedAlbum).catch(() => null);
-  }
+  const seedTitle = info ? info.title : query;
+  const seedArtist = info ? info.artist : '';
+  const videoId = await ResolveYouTubeVideoId(seedTitle, seedArtist).catch(() => null);
 
   host.reviewQueue.push({
     id: crypto.randomUUID(),
@@ -1341,8 +1334,8 @@ function ConvertSeconds(time) {
  *  Returns an 11-char videoId string, or null if nothing could be resolved
  *  (the item is still queued, just flagged not-playable).
  * ========================================================================== */
-async function ResolveYouTubeVideoId(title, artist, album) {
-  const query = [title, artist, album].filter(Boolean).join(' ').trim();
+async function ResolveYouTubeVideoId(title, artist) {
+  const query = [title, artist].filter(Boolean).join(' ').trim();
   if (!query) return null;
 
   // --- Strategy 1: ask our own server (same-origin, no CORS, no proxy) -------
@@ -1550,18 +1543,43 @@ async function GetSongInfo(request) {
     SearchMusicBrainz(seed.title, seed.artist).catch(() => null),
     SearchITunes(seed.title, seed.artist).catch(() => null),
   ]);
-  const enrich = mb || itunes || {};
 
   let info, artCandidates;
   if (seed.authoritative) {
-    info = { title: seed.title, artist: seed.artist, album: enrich.album || '', durationMs: seed.durationMs || enrich.durationMs || 0 };
+    // Authoritative seeds (e.g. Spotify embeds) keep their title/artist, but we enrich the album/art.
     artCandidates = [seed.albumArt, itunes && itunes.albumArt, mb && mb.albumArt];
+    const resolvedArt = await ResolveAlbumArt(artCandidates);
+
+    // Match the album name to whichever service provided the working art (fallback to iTunes then MB)
+    let album = '';
+    if (resolvedArt && itunes && resolvedArt === itunes.albumArt) album = itunes.album;
+    else if (resolvedArt && mb && resolvedArt === mb.albumArt) album = mb.album;
+    else album = (itunes || mb || {}).album || '';
+
+    info = { 
+      title: seed.title, 
+      artist: seed.artist, 
+      album, 
+      durationMs: seed.durationMs || (itunes || mb || {}).durationMs || 0, 
+      albumArt: resolvedArt 
+    };
   } else {
-    info = enrich.title
-      ? { title: enrich.title, artist: enrich.artist, album: enrich.album || '', durationMs: enrich.durationMs || 0 }
-      : { title: seed.title, artist: seed.artist, album: '', durationMs: 0 };
+    // Non-authoritative: we want the text to perfectly match the artwork we end up displaying.
     artCandidates = [itunes && itunes.albumArt, mb && mb.albumArt, seed.albumArt];
+    const resolvedArt = await ResolveAlbumArt(artCandidates);
+
+    let bestSource = null;
+    if (resolvedArt) {
+      if (itunes && resolvedArt === itunes.albumArt) bestSource = itunes;
+      else if (mb && resolvedArt === mb.albumArt) bestSource = mb;
+    }
+    // If the artwork didn't come from iTunes or MB (or no art loaded), default to iTunes then MB text.
+    if (!bestSource) bestSource = itunes || mb || {};
+
+    info = bestSource.title
+      ? { title: bestSource.title, artist: bestSource.artist, album: bestSource.album || '', durationMs: bestSource.durationMs || 0, albumArt: resolvedArt }
+      : { title: seed.title, artist: seed.artist, album: '', durationMs: 0, albumArt: resolvedArt };
   }
-  info.albumArt = await ResolveAlbumArt(artCandidates);
+  
   return info;
 }

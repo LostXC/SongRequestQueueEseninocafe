@@ -667,8 +667,8 @@ function initPlayerEraserMask(W, H, P) {
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="white" />` +
     `<path id="np-eraser-path" fill="none" stroke="black" stroke-width="160" stroke-linecap="round" stroke-linejoin="round" />` +
     `</mask></defs>`;
-  const wrap = document.querySelector('.np-card-wrapper');
-  if (wrap) { wrap.style.mask = 'url(#np-eraser-mask)'; wrap.style.webkitMask = 'url(#np-eraser-mask)'; }
+  const content = document.querySelector('.np-card-content');
+  if (content) { content.style.mask = 'url(#np-eraser-mask)'; content.style.webkitMask = 'url(#np-eraser-mask)'; }
 }
 
 // Diagonal scribble eraser path, swept to cover any width.

@@ -357,9 +357,16 @@ async function handleRedeem(data) {
   const info = await GetSongInfo(query).catch(() => null);
 
   // Resolve a YouTube Music videoId so we can actually play it.
-  const seedTitle = info ? info.title : query;
-  const seedArtist = info ? info.artist : '';
-  const videoId = await ResolveYouTubeVideoId(seedTitle, seedArtist).catch(() => null);
+  let videoId = null;
+  const m = query.match(/(?:v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  if (m) {
+    videoId = m[1];
+  } else {
+    const seedTitle = info ? info.title : query;
+    const seedArtist = info ? info.artist : '';
+    const seedAlbum = info ? info.album : '';
+    videoId = await ResolveYouTubeVideoId(seedTitle, seedArtist, seedAlbum).catch(() => null);
+  }
 
   host.reviewQueue.push({
     id: crypto.randomUUID(),
@@ -1334,8 +1341,8 @@ function ConvertSeconds(time) {
  *  Returns an 11-char videoId string, or null if nothing could be resolved
  *  (the item is still queued, just flagged not-playable).
  * ========================================================================== */
-async function ResolveYouTubeVideoId(title, artist) {
-  const query = [title, artist].filter(Boolean).join(' ').trim();
+async function ResolveYouTubeVideoId(title, artist, album) {
+  const query = [title, artist, album].filter(Boolean).join(' ').trim();
   if (!query) return null;
 
   // --- Strategy 1: ask our own server (same-origin, no CORS, no proxy) -------

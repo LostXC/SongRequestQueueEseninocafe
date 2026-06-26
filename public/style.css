@@ -140,6 +140,7 @@ body.dark .code-input::placeholder { color: #DEDEDE; }
   display: inline-flex;
   align-items: center;
   gap: 0;
+  border-radius: 6px;
   height: 32px;
   padding: 0;
   background: #000000;
@@ -152,7 +153,7 @@ body.dark .enter-btn { background: #FFFFFF; }
 .enter-text {
   padding: 5px 0 5px 8px;
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 22px;
   color: #ffffff;
 }
@@ -161,57 +162,23 @@ body.dark .enter-text { color: #000000; }
 .enter-icon { width: 32px; height: 32px; display: block; filter: invert(1); } /* white on black */
 body.dark .enter-icon { filter: invert(0); } /* black on white */
 
-/* ---- panels ---- */
-.panel {
-  max-width: 460px;
-  margin: 48px auto;
-  padding: 28px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+/* ---- host setup screens (reusing login-screen styles) ---- */
+.ytm-code-text {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 32px;
+  line-height: 39px;
+  color: var(--top-fg);
+  text-align: center;
+  letter-spacing: 2px;
 }
-.panel.center { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.panel h2 { margin: 0 0 4px; font-weight: 500; font-size: 24px; color: #FFFFFF; }
-.setup-step { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
-.setup-step:first-of-type { border-top: none; padding-top: 0; }
-.setup-step h3 { margin: 0 0 8px; font-size: 15px; }
 
-input {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 10px 0px;
-  border-radius: 8px;
-  font-size: 14px;
-  outline: none;
+.login-sub.dark-muted {
+  color: #2a2a2a;
 }
-input:focus { border-color: var(--accent); }
-form { display: flex; gap: 8px; margin-top: 8px; }
-form .input-wrap { position: relative; flex: 1; display: flex; }
-form input { flex: 1; }
-.eye-btn {
-  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-  background: transparent; padding: 6px; border: none; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
+body.dark .login-sub.dark-muted {
+  color: #9a9ea8;
 }
-.eye-btn:hover { background: transparent; filter: brightness(1.2); }
-.eye-icon { width: 20px; height: 20px; filter: invert(var(--icon-invert)); opacity: 0.5; }
-.eye-btn.open .eye-icon { opacity: 1; }
-
-button {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-button:hover { filter: brightness(1.08); }
-button:disabled { opacity: 0.5; cursor: default; }
-
-.btn-secondary { background: var(--panel-2); color: var(--text); }
 
 
 /* ---- host-or-mod choice ---- */
@@ -317,15 +284,18 @@ body.dark .btn-icon-absolute { filter: invert(0); }
   margin: 8px 0;
 }
 
-/* ---- spinner ---- */
-.spinner {
-  width: 28px; height: 28px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+/* ---- mode detection loading ---- */
+.detecting-text {
+  position: auto;
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--top-fg); /* Automatically black in light mode, white in dark mode */
+  z-index: 50; /* Keeps it above everything else */
+  margin-left: 12px;
+  margin-top: 12px;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- offline banner ---- */
 .banner {
@@ -333,7 +303,7 @@ body.dark .btn-icon-absolute { filter: invert(0); }
   color: #fff;
   text-align: center;
   padding: 10px 16px;
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 500;
 }
 

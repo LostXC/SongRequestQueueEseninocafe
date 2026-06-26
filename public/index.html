@@ -34,10 +34,7 @@
     </header>
 
     <!-- ===== Mode detection splash (shown while we figure out host vs viewer) ===== -->
-    <section id="detecting" class="panel center">
-      <div class="spinner"></div>
-      <p>Connecting…</p>
-    </section>
+    <div id="detecting" class="detecting-text">Connecting…</div>
 
     <!-- ===== Role choice (shown only when this machine CAN host) ===== -->
     <section id="rolePrompt" class="login-screen hidden">
@@ -83,36 +80,48 @@
     </section>
 
     <!-- ===== Host first-run setup (streamer only) ===== -->
-    <section id="hostSetup" class="panel hidden">
-      <h2>Host setup</h2>
-
+    <section id="hostSetup" class="login-screen hidden">
+      
       <!-- Host secret entry (asked first; only once, then saved on this PC) -->
-      <div id="hostSecretBox" class="setup-step hidden">
-        <h3>1 · Host secret</h3>
-        <p class="muted">Paste your <code>HOST_SECRET</code> so this tab can push the queue. Saved on this PC only.</p>
-        <form id="hostSecretForm">
-          <div class="input-wrap">
-            <input id="hostSecretInput" type="password" placeholder="HOST_SECRET" autocomplete="off" />
-            <button type="button" class="eye-btn" onclick="const i=document.getElementById('hostSecretInput'); i.type=i.type==='password'?'text':'password'; this.classList.toggle('open');" aria-label="Toggle password visibility" title="Show/Hide">
-              <img class="eye-icon" src="/icons/viewer-role.svg" alt="Show" />
-            </button>
+      <div id="hostSecretBox" class="login-box hidden" style="width: 423px; text-align: center;">
+        <h2 class="login-title">HOST ACCESS</h2>
+        <p class="login-sub">Enter the code to view and manage the requests. Saved on this PC only.</p>
+        
+        <form id="hostSecretForm" class="login-form">
+          <div class="code-field">
+            <div class="code-row">
+              <input id="hostSecretInput" class="code-input" type="password" placeholder="Host Secret" autocomplete="off" />
+              <button type="button" class="code-eye" onclick="const i=document.getElementById('hostSecretInput'); i.type=i.type==='password'?'text':'password'; this.classList.toggle('open');" aria-label="Toggle password visibility" title="Show/Hide">
+                <img class="eye-icon" src="/icons/viewer-role.svg" alt="Show" />
+              </button>
+            </div>
+            <div class="code-underline"></div>
           </div>
-          <button type="submit">Save</button>
+          
+          <button type="submit" class="enter-btn" title="Enter" style="border-radius: 6px;">
+            <span class="enter-text">Enter</span>
+            <!-- Removed the inline width/height so it uses the 32x32 size from the CSS -->
+            <img class="enter-icon" src="/icons/enter.svg" alt="" />
+          </button>
         </form>
       </div>
 
       <!-- YouTube Music authorization (revealed when the handshake starts) -->
-      <div id="ytmAuthBox" class="setup-step hidden">
-        <h3>2 · Authorize YouTube Music</h3>
-        <p class="muted">In the YouTube Music Desktop app, approve this code when it pops up:</p>
-        <div id="ytmAuthCode" class="big-code">…</div>
-        <p id="ytmAuthStatus" class="muted"></p>
+      <div id="ytmAuthBox" class="login-box hidden" style="width: 304px; text-align: center;">
+        <h2 class="login-title">HOST SETUP</h2>
+        <p class="login-sub" style="font-weight: 600; margin-top: 24px;">Authorize Youtube Music</p>
+        <p class="login-sub dark-muted" style="margin-top: 8px;">Approve this code when it pops up:</p>
+        
+        <div style="margin-top: 24px; display: flex; flex-direction: column; align-items: center;">
+          <div id="ytmAuthCode" class="ytm-code-text">…</div>
+          <div class="code-underline" style="width: 184px; margin-top: 6px;"></div>
+        </div>
       </div>
     </section>
 
     <!-- ===== Host offline banner (viewers only) ===== -->
     <div id="offlineBanner" class="banner hidden">
-      Host offline.
+      Host offline
     </div>
 
     <!-- ===== Queue UI (shown to host AND authenticated mods) ===== -->

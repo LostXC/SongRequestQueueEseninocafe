@@ -898,9 +898,11 @@ function setView(view) {
     : '<span class="view-opt">SONG&nbsp;</span><span class="view-main">QUEUE</span>';
   // the view-toggle icon shows the OTHER view (where the click takes you)
   ui.viewToggleIcon.src = requests ? '/icons/queue-list.svg' : '/icons/request-list.svg';
-  // Accept-all is requests-only; the broom (remove-all) shows in both views and
-  // clears whichever list is showing.
-  ui.acceptAllBtn.classList.toggle('hidden', !requests);
+  // Accept-all is requests-only, but we keep its slot reserved (just invisible)
+  // in the queue view so the toolbar layout — and therefore the title's available
+  // width — stays identical between views. The broom shows in both views.
+  ui.acceptAllBtn.classList.remove('hidden');
+  ui.acceptAllBtn.style.visibility = requests ? '' : 'hidden';
   ui.declineAllBtn.classList.remove('hidden');
   fitViewTitle(); // drop the "SONG " part if the full title won't fit
   // Cards built while their view was hidden have zero size, so their boiling
@@ -908,15 +910,20 @@ function setView(view) {
   resizeAllCardBorders();
 }
 
-// Show the full "SONG REQUESTS" when it fits, otherwise drop the "SONG " part
-// (rather than clipping it mid-word). Re-checked on view change + resize.
+// Show the full "SONG REQUESTS" / "SONG QUEUE" when it fits, otherwise drop the
+// "SONG " part (rather than clipping mid-word). The decision is always made
+// against the LONGER title ("REQUESTS") so both views shorten together.
 function fitViewTitle() {
   const opt = ui.viewTitle.querySelector('.view-opt');
   const main = ui.viewTitle.querySelector('.view-main');
   if (!opt || !main) return;
-  opt.style.display = '';                            // show it to measure naturally
-  const needed = opt.scrollWidth + main.scrollWidth; // full title width (incl. clipped)
-  if (needed > ui.viewTitle.clientWidth) opt.style.display = 'none';
+  opt.style.display = '';
+  const realMain = main.textContent;
+  if (realMain !== 'REQUESTS') main.textContent = 'REQUESTS'; // measure the worst case
+  const needed = opt.scrollWidth + main.scrollWidth;
+  const fits = needed <= ui.viewTitle.clientWidth;
+  if (main.textContent !== realMain) main.textContent = realMain; // restore
+  opt.style.display = fits ? '' : 'none';
 }
 
 // Bulk actions run the normal per-item action for every request (snapshot first,

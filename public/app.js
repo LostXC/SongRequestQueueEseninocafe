@@ -280,7 +280,7 @@ async function initHost() {
   if (ytmToken) {
     try {
       const checkResp = await fetch(`${YTMD.base}/api/v1/state`, {
-        headers: { Authorization: `Bearer ${ytmToken}` }
+        headers: { Authorization: ytmToken }
       });
       if (checkResp.status === 401 || checkResp.status === 403) {
         console.warn('[host] YouTube Music token is revoked/invalid. Forcing re-auth.');

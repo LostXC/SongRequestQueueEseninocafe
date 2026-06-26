@@ -130,7 +130,7 @@ body.dark {
 body.dark .code-input::placeholder { color: #DEDEDE; }
 
 .code-underline {
-  width: 214px; height: 7px;
+  width: 88px; height: 7px;
   margin-top: 6px;
   background: var(--top-fg);
   border-radius: 3.5px;

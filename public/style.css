@@ -286,15 +286,18 @@ body.dark .btn-icon-absolute { filter: invert(0); }
 
 /* ---- mode detection loading ---- */
 .detecting-text {
-  position: auto;
-  margin: 0;
+  /* Match the topbar's container logic */
+  max-width: 1100px;
+  margin: 0 auto;
+  
+  /* 12px left padding perfectly aligns it with the text inside the topbar */
+  padding: 12px; 
+  
+  /* Typography */
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 18px;
   font-weight: 500;
-  color: var(--top-fg); /* Automatically black in light mode, white in dark mode */
-  z-index: 50; /* Keeps it above everything else */
-  margin-left: 12px;
-  margin-top: 12px;
+  color: var(--top-fg);
 }
 
 /* ---- offline banner ---- */

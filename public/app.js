@@ -288,14 +288,9 @@ async function initHost() {
         localStorage.removeItem(STORE.ytmToken);
       }
     } catch (e) {
-      // If the fetch throws, YTMD is either completely closed, or it rejected the 
-      // request so early it dropped CORS headers (a common quirk with 401s).
-      // We check if it's online to distinguish. If it's online, the token is dead.
-      if (await canReachHTTP(`${YTMD.base}/metadata`, 1000)) {
-        console.warn('[host] Token rejected (CORS/Network error). Forcing re-auth.');
-        ytmToken = null;
-        localStorage.removeItem(STORE.ytmToken);
-      }
+      // If the fetch throws, YTMD might have dropped CORS headers or have a network blip.
+      // Do NOT forcefully clear the token here because it causes valid tokens to be discarded.
+      console.warn('[host] Token check threw an error (likely CORS). Keeping token and hoping for the best.', e);
     }
   }
 
@@ -1414,12 +1409,32 @@ async function ResolveYouTubeVideoId(title, artist) {
   const query = [title, artist].filter(Boolean).join(' ').trim();
   if (!query) return null;
 
+  const isMatch = (req, found) => {
+    if (!req || !found) return false;
+    const normalize = (s) => s.toLowerCase().replace(/'/g, '').split(/[^a-z0-9]+/).filter(Boolean);
+    const reqWords = normalize(req);
+    const foundWords = normalize(found);
+    if (reqWords.length === 0 || foundWords.length === 0) return false;
+    const reqInFound = reqWords.every(w => foundWords.includes(w));
+    const foundInReq = foundWords.every(w => reqWords.includes(w));
+    return reqInFound || foundInReq;
+  };
+
   // --- Strategy 1: ask our own server (same-origin, no CORS, no proxy) -------
   try {
     const r = await fetch(`${SERVER}/resolve?q=` + encodeURIComponent(query));
     if (r.ok) {
       const j = await r.json();
-      if (j.videoId) return j.videoId;
+      if (j.videoId && j.title) {
+        if (isMatch(title, j.title)) {
+          return j.videoId;
+        } else {
+          console.debug(`[videoId] Title mismatch: requested "${title}", found "${j.title}"`);
+          return null; // Return null so we admit we couldn't find it
+        }
+      } else if (j.videoId) {
+        return j.videoId;
+      }
     }
   } catch (e) { console.debug('[videoId] server resolve failed, trying fallback', e); }
 
@@ -1433,8 +1448,19 @@ async function ResolveYouTubeVideoId(title, artist) {
       const r = await fetch(url);
       if (r.ok) {
         const j = await r.json();
-        const vid = j.items && j.items[0] && j.items[0].id && j.items[0].id.videoId;
-        if (vid) return vid;
+        const item = j.items && j.items[0];
+        if (item && item.id && item.id.videoId) {
+          const foundTitle = item.snippet && item.snippet.title;
+          if (foundTitle) {
+            if (isMatch(title, foundTitle)) {
+              return item.id.videoId;
+            } else {
+              console.debug(`[videoId] Data API Title mismatch: requested "${title}", found "${foundTitle}"`);
+              return null;
+            }
+          }
+          return item.id.videoId;
+        }
       }
     } catch (e) { console.debug('[videoId] Data API failed', e); }
   }

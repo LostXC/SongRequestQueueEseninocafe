@@ -22,10 +22,15 @@
 <body class="dark">
   <div id="app">
 
-    <!-- ===== Top bar ===== -->
+    <!-- ===== Top bar (pre-queue screens: detecting / role / login / setup) ===== -->
     <header id="topbar">
-      <div class="brand">Eseninocafe · Song Requests</div>
-      <div id="roleBadge" class="badge">…</div>
+      <div class="toolbar-left">
+        <h1 class="view-title">SONG REQUESTS</h1>
+        <img id="topRoleIndicator" class="top-icon role-indicator" width="32" height="32" alt="role" />
+        <button id="topThemeBtn" class="tbtn" aria-label="Toggle light/dark" title="Toggle light/dark theme">
+          <img id="topThemeIcon" class="top-icon" src="/icons/sun.svg" width="32" height="32" alt="" />
+        </button>
+      </div>
     </header>
 
     <!-- ===== Mode detection splash (shown while we figure out host vs viewer) ===== -->
@@ -35,29 +40,46 @@
     </section>
 
     <!-- ===== Role choice (shown only when this machine CAN host) ===== -->
-    <section id="rolePrompt" class="panel center hidden">
-      <h2>Who are you?</h2>
-      <p class="muted">This machine can host the queue — YouTube Music and Streamer.bot are both reachable.</p>
-      <div class="role-buttons">
-        <button id="chooseHostBtn">I'm the host</button>
-        <button id="chooseModBtn" class="btn-secondary">I'm a mod</button>
+    <section id="rolePrompt" class="login-screen hidden">
+      <div class="login-box" style="width: 240px;">
+        <h2 class="login-title" style="margin-bottom: 24px;">Who are you?</h2>
+        <div class="role-buttons">
+          <button id="chooseHostBtn" class="role-button">
+            <img src="/icons/host-role.svg" class="btn-left-icon" alt="" />
+            <span>I'm the host</span>
+          </button>
+          <button id="chooseModBtn" class="role-button">
+            <img src="/icons/viewer-role.svg" class="btn-left-icon" alt="" />
+            <span>I'm a mod</span>
+          </button>
+        </div>
       </div>
     </section>
 
     <!-- ===== Viewer login (mods) ===== -->
-    <section id="login" class="panel center hidden">
-      <h2>Mod access</h2>
-      <p class="muted">Enter the code to view and manage the queue.</p>
-      <form id="loginForm">
-        <div class="input-wrap">
-          <input id="codeInput" type="password" placeholder="Mod code" autocomplete="off" />
-          <button type="button" class="eye-btn" onclick="const i=document.getElementById('codeInput'); i.type=i.type==='password'?'text':'password'; this.classList.toggle('open');" aria-label="Toggle password visibility" title="Show/Hide">
-            <img class="eye-icon" src="/icons/viewer-role.svg" alt="Show" />
+    <section id="login" class="login-screen hidden">
+      <div class="login-box">
+        <h2 class="login-title">MOD ACCESS</h2>
+        <p class="login-sub">Enter the code to view and manage the requests</p>
+        <form id="loginForm" class="login-form">
+          <!-- code field: eye toggle on the left, right-aligned input, underline below -->
+          <div class="code-field">
+            <div class="code-row">
+              <input id="codeInput" class="code-input" type="password" placeholder="Mod code" autocomplete="off" />
+              <button type="button" id="codeEyeBtn" class="code-eye" aria-label="Show/hide code" title="Show/Hide">
+                <img class="eye-icon" src="/icons/viewer-role.svg" alt="" />
+              </button>
+            </div>
+            <div class="code-underline"></div>
+          </div>
+          <!-- enter button: "Enter" text + enter.svg -->
+          <button type="submit" class="enter-btn" title="Enter">
+            <span class="enter-text">Enter</span>
+            <img class="enter-icon" src="/icons/enter.svg" alt="" />
           </button>
-        </div>
-        <button type="submit">Enter</button>
-      </form>
-      <p id="loginError" class="error hidden">Wrong code, try again.</p>
+        </form>
+        <p id="loginError" class="error hidden">Wrong code, try again.</p>
+      </div>
     </section>
 
     <!-- ===== Host first-run setup (streamer only) ===== -->
@@ -90,7 +112,7 @@
 
     <!-- ===== Host offline banner (viewers only) ===== -->
     <div id="offlineBanner" class="banner hidden">
-      Host offline — playback paused. Eseninocafe needs to open the queue tab.
+      Host offline.
     </div>
 
     <!-- ===== Queue UI (shown to host AND authenticated mods) ===== -->

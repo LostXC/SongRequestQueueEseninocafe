@@ -48,29 +48,118 @@ body.dark {
 .muted { color: var(--muted); }
 .center { text-align: center; }
 
-/* ---- top bar ---- */
+/* ---- top bar (pre-queue screens) — mirrors the queue toolbar's left side ---- */
 #topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 20px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 30;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 12px 24px 12px 12px;
+  background: var(--page-bg);
+  display: flex;
+  align-items: center;
 }
-.brand { font-weight: 600; letter-spacing: 0.2px; }
-.badge {
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--panel-2);
-  color: var(--muted);
-  border: 1px solid var(--border);
+
+#topRoleIndicator:not([src]) {
+  display: none;
 }
-.badge.host { background: rgba(124, 92, 255, 0.18); color: #c9bcff; border-color: transparent; }
-.badge.viewer { background: rgba(47, 183, 116, 0.18); color: #8fe3bb; border-color: transparent; }
+
+/* ===== Mod login (MOD ACCESS) — centered in the viewport ===== */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* Added position: relative so the absolute error text anchors to this box */
+.login-box { 
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  position: relative; 
+}
+
+.login-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--top-fg);
+  text-align: center;
+}
+.login-sub {
+  margin: 24px 0 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--top-fg);
+  text-align: center;
+}
+.login-form {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start; /* eye row lines up with the enter button */
+  justify-content: center;
+  gap: 24px;
+}
+
+/* code field: [eye] [right-aligned input] with a 7px underline below */
+.code-field { width: 214px; display: flex; flex-direction: column; }
+.code-row { display: flex; flex-direction: row; align-items: center; height: 32px; }
+.code-eye {
+  width: 32px; height: 32px;
+  flex-shrink: 0;
+  padding: 0; border: none; background: transparent; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.code-eye .eye-icon { width: 32px; height: 32px; filter: invert(var(--icon-invert)); opacity: 0.85; }
+.code-eye.open .eye-icon { opacity: 1; }
+.code-input {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 18px; font-weight: 500;
+  color: var(--top-fg);
+  text-align: left;
+  padding-left: 2px;
+}
+.code-input::placeholder { color: #2a2a2a; opacity: 1; }
+body.dark .code-input::placeholder { color: #DEDEDE; }
+
+.code-underline {
+  width: 214px; height: 7px;
+  margin-top: 6px;
+  background: var(--top-fg);
+  border-radius: 3.5px;
+}
+
+/* enter button: "Enter" + enter.svg, total ~85×32 on a black field */
+.enter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 32px;
+  padding: 0;
+  background: #000000;
+  border: none;
+  cursor: pointer;
+}
+body.dark .enter-btn { background: #FFFFFF; }
+.enter-btn:hover { filter: brightness(1.2); }
+
+.enter-text {
+  padding: 5px 0 5px 8px;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 22px;
+  color: #ffffff;
+}
+body.dark .enter-text { color: #000000; }
+
+.enter-icon { width: 32px; height: 32px; display: block; filter: invert(1); } /* white on black */
+body.dark .enter-icon { filter: invert(0); } /* black on white */
 
 /* ---- panels ---- */
 .panel {
@@ -91,7 +180,7 @@ input {
   background: var(--panel-2);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 10px 12px;
+  padding: 10px 0px;
   border-radius: 8px;
   font-size: 14px;
   outline: none;
@@ -99,7 +188,7 @@ input {
 input:focus { border-color: var(--accent); }
 form { display: flex; gap: 8px; margin-top: 8px; }
 form .input-wrap { position: relative; flex: 1; display: flex; }
-form input { flex: 1; padding-right: 40px; }
+form input { flex: 1; }
 .eye-btn {
   position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
   background: transparent; padding: 6px; border: none; cursor: pointer;
@@ -124,11 +213,99 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .btn-secondary { background: var(--panel-2); color: var(--text); }
 
-/* host-or-mod choice */
-.role-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 8px; }
-.role-buttons button { width: 100%; padding: 12px; font-size: 15px; }
 
-.error { color: #ff8a8a; font-size: 13px; }
+/* ---- host-or-mod choice ---- */
+.role-choose-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  gap: 24px;
+  width: 301px;
+  margin: 48px auto; /* Centers the whole block horizontally */
+}
+
+.role-choose-title {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 29px;
+  color: var(--top-fg); /* Fallbacks to black in light mode, white in dark */
+  text-align: center;
+}
+
+.role-buttons { 
+  display: flex;
+  align-items: center; 
+  flex-direction: column; 
+  gap: 24px; 
+  width: 100%; 
+}
+
+.role-buttons button { 
+  width: 323px; 
+  height: 44px;
+  background: #000000;
+  border-radius: 6px;
+  border: none;
+  padding: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 22px;
+  color: #FFFFFF;
+  position: relative; /* Keeps the absolute icon contained inside the button */
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Keeps text perfectly centered */
+  cursor: pointer;
+}
+body.dark .role-buttons button {
+  background: #FFFFFF;
+  color: #000000;
+}
+.role-buttons button:hover {
+  filter: brightness(1.2);
+}
+
+.btn-left-icon {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 32px;
+  height: 32px;
+  /* If your icons are black, this makes them white on the black button */
+  filter: invert(1); 
+}
+body.dark .btn-left-icon { filter: invert(0); } /* black on white */
+
+/* Pins the SVG icon to the right side of the button (retained if you need it elsewhere) */
+.btn-icon-absolute {
+  position: absolute;
+  right: 16px;
+  width: 20px;
+  height: 20px;
+  filter: invert(1); /* Makes the black icon white to match the text */
+}
+body.dark .btn-icon-absolute { filter: invert(0); }
+
+
+/* Taken out of standard layout flow so it doesn't move items when it appears */
+.error {
+  position: absolute;
+  top: 100%; /* Placed below the bottom edge of .login-box */
+  margin-top: 24px; /* Gap between the form and the error text */
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #ff8a8a;
+  font-size: 18px;
+  font-weight: 500;
+  pointer-events: none; /* Prevents it from accidentally catching clicks */
+}
+
+
 .big-code {
   font-size: 30px;
   font-weight: 700;

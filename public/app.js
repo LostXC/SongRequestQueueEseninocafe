@@ -55,7 +55,10 @@ const THEME_KEY = 'srq_theme';
 // =============================================================================
 const el = (id) => document.getElementById(id);
 const ui = {
-  roleBadge: el('roleBadge'),
+  topRoleIndicator: el('topRoleIndicator'),
+  topThemeBtn: el('topThemeBtn'),
+  topThemeIcon: el('topThemeIcon'),
+  codeEyeBtn: el('codeEyeBtn'),
   detecting: el('detecting'),
   rolePrompt: el('rolePrompt'),
   chooseHostBtn: el('chooseHostBtn'),
@@ -109,6 +112,13 @@ let role = null;
 // =============================================================================
 (async function boot() {
   applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); // theme the bg from the start
+  // Top-bar controls (present on the pre-queue screens) work right away.
+  if (ui.topThemeBtn) ui.topThemeBtn.addEventListener('click', toggleTheme);
+  if (ui.codeEyeBtn) ui.codeEyeBtn.addEventListener('click', () => {
+    const i = ui.codeInput;
+    i.type = i.type === 'password' ? 'text' : 'password';
+    ui.codeEyeBtn.classList.toggle('open', i.type === 'text');
+  });
   const decision = await detectMode();
   if (decision === 'host') return startHost();       // forced via ?host
   if (decision === 'viewer') return startViewer();   // can't host, or forced ?viewer
@@ -119,17 +129,23 @@ let role = null;
 // Run the host path.
 async function startHost() {
   role = 'host';
-  ui.roleBadge.textContent = 'HOST';
-  ui.roleBadge.className = 'badge host';
+  setRoleIndicators();
   await initHost();
 }
 
 // Run the viewer (mod) path.
 function startViewer() {
   role = 'viewer';
-  ui.roleBadge.textContent = 'VIEWER';
-  ui.roleBadge.className = 'badge viewer';
+  setRoleIndicators();
   initViewer();
+}
+
+// Point every role-indicator icon (top bar + queue toolbar) at host/viewer.
+function setRoleIndicators() {
+  const src = role === 'host' ? '/icons/host-role.svg' : '/icons/viewer-role.svg';
+  const title = role === 'host' ? 'Host' : 'Viewer';
+  if (ui.topRoleIndicator) { ui.topRoleIndicator.src = src; ui.topRoleIndicator.title = title; }
+  if (ui.roleIndicator) { ui.roleIndicator.src = src; ui.roleIndicator.title = title; }
 }
 
 // This machine can host — show the "host or mod?" choice and branch on the click.
@@ -595,9 +611,8 @@ function enterQueueUI() {
   ui.queueUI.classList.remove('hidden');
   ui.player.classList.remove('hidden');
   // role indicator icon reflects who this tab is
-  ui.roleIndicator.src = role === 'host' ? '/icons/host-role.svg' : '/icons/viewer-role.svg';
+  setRoleIndicators();
   ui.roleIndicator.title = role === 'host' ? 'Host' : 'Viewer';
-  ui.roleBadge.title = role === 'host' ? 'Host' : 'Viewer';
   if (!toolbarInited) { initToolbar(); toolbarInited = true; }
   ui.npArt.onerror = () => { ui.npArt.src = BLANK_PX; };
   ui.npArt.src = BLANK_PX; // red placeholder until a song loads
@@ -878,7 +893,9 @@ window.addEventListener('resize', () => {
 function applyTheme(theme) {
   const dark = theme === 'dark';
   document.body.classList.toggle('dark', dark);
-  if (ui.themeToggleIcon) ui.themeToggleIcon.src = dark ? '/icons/moon.svg' : '/icons/sun.svg';
+  const icon = dark ? '/icons/moon.svg' : '/icons/sun.svg';
+  if (ui.themeToggleIcon) ui.themeToggleIcon.src = icon;     // queue toolbar
+  if (ui.topThemeIcon) ui.topThemeIcon.src = icon;           // pre-queue top bar
 }
 function toggleTheme() {
   const next = document.body.classList.contains('dark') ? 'light' : 'dark';

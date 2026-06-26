@@ -301,14 +301,28 @@ async function initHost() {
 
   // If we have no token (first run, or it was just cleared above), prompt for one.
   if (!ytmToken) {
+    // Make sure YTMD is actually reachable BEFORE we try the handshake,
+    // so a failure shows a clear message instead of a silent fallback.
+    const ytmdUp = await canReachHTTP(`${YTMD.base}/metadata`, 2500);
+    if (!ytmdUp) {
+      ui.hostSetup.classList.remove('hidden');
+      el('ytmAuthBox').classList.remove('hidden');
+      ui.ytmAuthCode.textContent = '—';
+      ui.ytmAuthStatus.textContent =
+        'YouTube Music Desktop is not reachable. Open YTMD, enable its companion server (Settings → Integrations → Companion Server), then reload.';
+      return; // hard stop — a host with no playback control is useless
+    }
+
     ui.hostSetup.classList.remove('hidden');
     el('ytmAuthBox').classList.remove('hidden');
     try {
       ytmToken = await runYtmAuth();
       localStorage.setItem(STORE.ytmToken, ytmToken);
     } catch (e) {
-      console.warn('[host] YouTube Music not reachable — running without playback control', e);
-      ytmToken = null;
+      ui.ytmAuthStatus.textContent =
+        'Authorization failed: ' + (e && e.message ? e.message : 'unknown error') + '. Reload to retry.';
+      console.error('[host] YTM auth failed', e);
+      return; // hard stop instead of running without playback
     }
   }
 

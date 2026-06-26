@@ -862,8 +862,9 @@ function resizeAllCardBorders() {
   }
   setupPlayerBorder();
 }
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(resizeAllCardBorders);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { resizeAllCardBorders(); fitViewTitle(); });
 window.addEventListener('resize', () => {
+  fitViewTitle();
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(resizeAllCardBorders, 150);
 });
@@ -892,16 +893,30 @@ function setView(view) {
   const requests = view === 'requests';
   ui.requestsView.classList.toggle('hidden', !requests);
   ui.queueView.classList.toggle('hidden', requests);
-  ui.viewTitle.textContent = requests ? 'SONG REVIEWS' : 'SONG QUEUE';
+  ui.viewTitle.innerHTML = requests
+    ? '<span class="view-opt">SONG&nbsp;</span><span class="view-main">REQUESTS</span>'
+    : '<span class="view-opt">SONG&nbsp;</span><span class="view-main">QUEUE</span>';
   // the view-toggle icon shows the OTHER view (where the click takes you)
   ui.viewToggleIcon.src = requests ? '/icons/queue-list.svg' : '/icons/request-list.svg';
   // Accept-all is requests-only; the broom (remove-all) shows in both views and
   // clears whichever list is showing.
   ui.acceptAllBtn.classList.toggle('hidden', !requests);
   ui.declineAllBtn.classList.remove('hidden');
+  fitViewTitle(); // drop the "SONG " part if the full title won't fit
   // Cards built while their view was hidden have zero size, so their boiling
   // borders weren't registered — set them up now that the view is visible.
   resizeAllCardBorders();
+}
+
+// Show the full "SONG REQUESTS" when it fits, otherwise drop the "SONG " part
+// (rather than clipping it mid-word). Re-checked on view change + resize.
+function fitViewTitle() {
+  const opt = ui.viewTitle.querySelector('.view-opt');
+  const main = ui.viewTitle.querySelector('.view-main');
+  if (!opt || !main) return;
+  opt.style.display = '';                            // show it to measure naturally
+  const needed = opt.scrollWidth + main.scrollWidth; // full title width (incl. clipped)
+  if (needed > ui.viewTitle.clientWidth) opt.style.display = 'none';
 }
 
 // Bulk actions run the normal per-item action for every request (snapshot first,

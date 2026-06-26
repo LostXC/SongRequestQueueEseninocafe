@@ -176,7 +176,17 @@ button:disabled { opacity: 0.5; cursor: default; }
   padding: 12px 24px 12px 12px;
   background: var(--page-bg);
 }
-.toolbar-left, .toolbar-right { display: flex; align-items: center; }
+.toolbar-left {
+  display: flex; 
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-right { 
+  display: flex; 
+  align-items: center; 
+}
 
 .view-title {
   margin: 0;
@@ -185,6 +195,20 @@ button:disabled { opacity: 0.5; cursor: default; }
   font-size: 24px;
   line-height: 29px;
   color: var(--top-fg);
+  white-space: nowrap;
+
+  display: flex;
+  min-width: 0;
+}
+
+.view-opt {
+  flex-shrink: 1;
+  overflow: hidden;
+  white-space: nowrap; 
+}
+
+.view-main {
+  flex-shrink: 0;
   white-space: nowrap;
 }
 

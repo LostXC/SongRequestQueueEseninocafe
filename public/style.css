@@ -329,6 +329,7 @@ body.dark .btn-icon-absolute { filter: invert(0); }
 .toolbar-left {
   display: flex; 
   align-items: center;
+  gap: 4px;
   flex: 1;
   min-width: 0;
 }
@@ -346,7 +347,7 @@ body.dark .btn-icon-absolute { filter: invert(0); }
   line-height: 29px;
   color: var(--top-fg);
   white-space: nowrap;
-
+  padding-right: 2px;
   display: flex;
   min-width: 0;
 }
@@ -363,7 +364,6 @@ body.dark .btn-icon-absolute { filter: invert(0); }
 }
 
 /* gaps from the design: title →6px→ role →4px→ theme ; bulk →4px→ view toggle */
-.toolbar-left .role-indicator { margin-left: 6px; }
 .toolbar-left #themeToggleBtn { margin-left: 4px; }
 .toolbar-right .tbtn + .tbtn { margin-left: 4px; }
 

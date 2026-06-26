@@ -283,9 +283,9 @@ async function initHost() {
         headers: { Authorization: ytmToken }
       });
       if (checkResp.status === 401 || checkResp.status === 403) {
-        console.warn('[host] YouTube Music token is revoked/invalid. Forcing re-auth.');
-        ytmToken = null;
-        localStorage.removeItem(STORE.ytmToken);
+        console.warn('[host] YouTube Music token rejected. Companion auth might be disabled or token revoked. Keeping token to prevent auth loop.');
+        // We do NOT clear the token here. If the user disabled "Enable companion authorization" 
+        // in YTMD, it rejects the token, and clearing it would force an unresolvable auth loop.
       }
     } catch (e) {
       // If the fetch throws, YTMD might have dropped CORS headers or have a network blip.

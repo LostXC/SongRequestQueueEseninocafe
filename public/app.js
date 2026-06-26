@@ -273,9 +273,33 @@ async function initHost() {
   localStorage.setItem(STORE.hostSecret, hostSecret);
 
   // 2) YouTube Music token — reuse the saved one, otherwise run the handshake.
-  //    If YTMD isn't reachable we DON'T block: the queue stays fully manageable
-  //    (accept/decline/reorder all work), just without playback until YTMD is up.
   ytmToken = localStorage.getItem(STORE.ytmToken);
+
+  // Check if the saved token is still valid. If you revoked the connection
+  // in YTMD, it will reject our request (401/403) and we will prompt again.
+  if (ytmToken) {
+    try {
+      const checkResp = await fetch(`${YTMD.base}/api/v1/state`, {
+        headers: { Authorization: `Bearer ${ytmToken}` }
+      });
+      if (checkResp.status === 401 || checkResp.status === 403) {
+        console.warn('[host] YouTube Music token is revoked/invalid. Forcing re-auth.');
+        ytmToken = null;
+        localStorage.removeItem(STORE.ytmToken);
+      }
+    } catch (e) {
+      // If the fetch throws, YTMD is either completely closed, or it rejected the 
+      // request so early it dropped CORS headers (a common quirk with 401s).
+      // We check if it's online to distinguish. If it's online, the token is dead.
+      if (await canReachHTTP(`${YTMD.base}/metadata`, 1000)) {
+        console.warn('[host] Token rejected (CORS/Network error). Forcing re-auth.');
+        ytmToken = null;
+        localStorage.removeItem(STORE.ytmToken);
+      }
+    }
+  }
+
+  // If we have no token (first run, or it was just cleared above), prompt for one.
   if (!ytmToken) {
     ui.hostSetup.classList.remove('hidden');
     el('ytmAuthBox').classList.remove('hidden');

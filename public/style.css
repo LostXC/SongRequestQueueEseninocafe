@@ -237,9 +237,6 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
   pointer-events: none; /* Prevents it from accidentally catching clicks */
 }
 
-
-}
-
 /* ---- mode detection loading ---- */
 .detecting-text {
   /* Match the topbar's container logic */

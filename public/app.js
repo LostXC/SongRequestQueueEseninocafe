@@ -516,6 +516,16 @@ function fireYtmd(videoId) {
 // Same connection shape the existing music widget uses.
 let lastSeenVideoId = null;
 let advancedFromVideoId = null; // guards against double auto-advance
+let endTimer = null;            // armed to swap in the next song as the current ends
+
+// Fire the next song this many ms before the current track's natural end. Firing
+// early (rather than at the exact end) means we win the race against YouTube
+// Music's own autoplay, so a suggested song never gets a chance to start.
+const END_LEAD_MS = 1000;
+
+function clearEndTimer() {
+  if (endTimer) { clearTimeout(endTimer); endTimer = null; }
+}
 
 function connectYtmRealtime() {
   if (typeof io === 'undefined') return setTimeout(connectYtmRealtime, 1000);
@@ -556,13 +566,24 @@ function onYtmState(stateData) {
 
   if (vid !== lastSeenVideoId) lastSeenVideoId = vid; // a new song is playing
 
-  // Auto-advance: when the current track reaches its end, play the next queued
-  // song. Guarded so we only fire once per finished track.
-  const nearEnd = duration > 0 && progress >= duration - 1.2;
-  if (nearEnd && vid && advancedFromVideoId !== vid && host.playQueue.length) {
-    advancedFromVideoId = vid;
-    advanceNext();
-    scheduleSync(true);
+  // Auto-advance: instead of waiting for a state update to land in a tiny
+  // near-end window (which it often doesn't — and then YouTube Music's autoplay
+  // slips a suggested song in first), predict when the current track will end
+  // from progress + duration and arm a timer to play the next queued song then.
+  // Each fresh state re-arms the timer, so seeking/pausing stays in sync. We
+  // fire slightly before the natural end so our song takes over cleanly without
+  // any start/stop. Guarded so we only advance once per finished track.
+  clearEndTimer();
+  const playing = trackState === 1;
+  if (playing && duration > 0 && vid && advancedFromVideoId !== vid && host.playQueue.length) {
+    const remainingMs = Math.max(0, (duration - progress) * 1000 - END_LEAD_MS);
+    endTimer = setTimeout(() => {
+      endTimer = null;
+      if (advancedFromVideoId === vid || !host.playQueue.length) return;
+      advancedFromVideoId = vid;
+      advanceNext();
+      scheduleSync(true);
+    }, remainingMs);
   }
 
   scheduleSync(false); // routine now-playing tick (throttled)

@@ -27,10 +27,10 @@
     <header id="topbar">
       <div class="toolbar-left">
         <h1 class="view-title">SONG REQUESTS</h1>
-        <img id="topRoleIndicator" class="top-icon role-indicator" width="32" height="32" alt="role" />
         <button id="topThemeBtn" class="tbtn" aria-label="Toggle light/dark" title="Toggle light/dark theme">
           <img id="topThemeIcon" class="top-icon" src="/icons/sun.svg" width="32" height="32" alt="" />
         </button>
+        <img id="topRoleIndicator" class="top-icon role-indicator" width="32" height="32" alt="role" />
       </div>
     </header>
 
@@ -216,10 +216,6 @@
                 <span class="sc-username"></span>
               </div>
               <div class="sc-header-right">
-                
-                <!-- The warning is moved right here! -->
-                <span class="sc-warn hidden">No YouTube match</span>
-
                 <span class="sc-age">
                   <img class="sc-age-clock" src="/icons/clock.svg" alt="" />
                   <span class="sc-age-text"></span>
@@ -246,6 +242,8 @@
                   <span class="sc-duration-text"></span>
                 </span>
               </div>
+              <!-- Shown only on unplayable requests; sits under the artist/duration line -->
+              <span class="sc-warn hidden">No YouTube match</span>
             </div>
           </div>
         </div>

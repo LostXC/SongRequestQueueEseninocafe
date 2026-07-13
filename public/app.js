@@ -1092,7 +1092,10 @@ function registerBoil(canvas, contentW, contentH, bottomExtension, strokeColor) 
 function unregisterBoil(canvas) {
   if (canvas && canvas._boilEntry) { boilEntries.delete(canvas._boilEntry); canvas._boilEntry = null; }
 }
-function unregisterCardBorders(card) { card.querySelectorAll('canvas').forEach(unregisterBoil); }
+function unregisterCardBorders(card) {
+  card.querySelectorAll('canvas').forEach(unregisterBoil);
+  (card._marquees || []).forEach((m) => marquees.delete(m)); // stop ticking removed cards
+}
 
 // Measure a card's two boxes and (re)register their boiling canvases. The header
 // border extends 26px down so it visually connects with the music card below.
@@ -1103,6 +1106,7 @@ function setupCardBorders(card) {
   const commentWrap = card.querySelector('.sub-comment-wrapper');
   if (commentWrap) registerBoil(card.querySelector('.sub-comment-border-canvas'), commentWrap.offsetWidth, commentWrap.offsetHeight, 0, '#000000');
   card._bordersReady = true;
+  measureCardMarquees(card); // now that the card has a real size, gauge each line's overflow
 }
 
 function boilTick(ts) {
@@ -1188,13 +1192,107 @@ setInterval(() => {
 
 const BLANK_PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
+/* =============================================================================
+ *  HOVER-TO-SCROLL MARQUEE — ported from Music-Info-Card/test/collage.html
+ *  An overflowing text line reveals its tail by scrolling WHILE hovered, then
+ *  rewinds home when the pointer leaves. One shared speed profile (ease-in →
+ *  cruise → ease-out) so every line moves at the same pace regardless of length.
+ * ========================================================================== */
+const MQ = { speed: 50, fadePx: 8, easeMs: 650 }; // px/s cruise · px fade ramp · accel/decel ms
+const V_CRUISE = MQ.speed / 1000;                 // px per ms
+const A_RAMP = V_CRUISE / MQ.easeMs;              // px per ms² (fixed accel/decel)
+function mqScrollMs(D) {                            // total time to travel distance D
+  if (D <= 0) return 0;
+  if (D >= V_CRUISE * MQ.easeMs) return D / V_CRUISE + MQ.easeMs; // trapezoid (has a cruise)
+  return 2 * Math.sqrt(D / A_RAMP);                // triangle (too short to reach cruise)
+}
+function mqTravel(D, st) {                          // how far distance-D has moved st ms in
+  if (D <= 0 || st <= 0) return 0;
+  const T = mqScrollMs(D); if (st >= T) return D;
+  if (D >= V_CRUISE * MQ.easeMs) {                  // trapezoid
+    const E = MQ.easeMs;
+    if (st < E) return 0.5 * A_RAMP * st * st;                       // accelerate
+    if (st < T - E) return 0.5 * V_CRUISE * E + V_CRUISE * (st - E); // cruise
+    const q = T - st; return D - 0.5 * A_RAMP * q * q;              // decelerate
+  }
+  const half = T / 2;                              // triangle: symmetric accel/decel
+  if (st < half) return 0.5 * A_RAMP * st * st;
+  const q = T - st; return D - 0.5 * A_RAMP * q * q;
+}
+
+const marquees = new Set();
+
+// Wrap an existing text element's content in a marquee window (mutates el in place).
+function makeMarquee(el, text) {
+  el.classList.add('mq', 'fade');
+  el.textContent = '';
+  const inner = document.createElement('span');
+  inner.className = 'mq-inner';
+  inner.textContent = text;
+  el.appendChild(inner);
+  const m = { win: el, inner, O: 0, hovering: false, he: 0 };
+  el._marquee = m;
+  marquees.add(m);
+  return m;
+}
+
+// Read layout once (not per frame) — O = how far the text overflows its window.
+function measureCardMarquees(card) {
+  for (const m of card._marquees || []) {
+    m.O = Math.max(0, Math.round(m.inner.scrollWidth - m.win.clientWidth));
+  }
+}
+
+// off ≤ 0; --l fades the left edge, --r the right, each ramping over MQ.fadePx.
+function mqSetFade(m, off) {
+  m.win.style.setProperty('--l', m.O ? Math.min(1, (-off) / MQ.fadePx).toFixed(3) : 0);
+  m.win.style.setProperty('--r', m.O ? Math.min(1, (m.O + off) / MQ.fadePx).toFixed(3) : 0);
+}
+
+// Advance real elapsed ms while hovered (rewind when not) → identical pace either
+// way; caps at the line's own scroll time so it parks at the end.
+let _mqLast = 0;
+function mqTick(timeMs) {
+  const dt = _mqLast ? Math.min(64, timeMs - _mqLast) : 16; _mqLast = timeMs;
+  for (const m of marquees) {
+    const dir = (m.hovering && m.O > 0) ? 1 : -1;
+    m.he = Math.max(0, Math.min(mqScrollMs(m.O), m.he + dir * dt));
+    const off = m.O > 0 ? -mqTravel(m.O, m.he) : 0;
+    m.inner.style.transform = `translateX(${off}px)`;
+    mqSetFade(m, off);
+  }
+  requestAnimationFrame(mqTick);
+}
+requestAnimationFrame(mqTick);
+
+// Scroll the given marquees only while `el` is hovered.
+function bindHover(el, ms) {
+  ms = ms.filter(Boolean);
+  if (!ms.length) return;
+  el.addEventListener('mouseenter', () => ms.forEach((m) => { m.hovering = true; }));
+  el.addEventListener('mouseleave', () => ms.forEach((m) => { m.hovering = false; }));
+}
+
 // Build one "redeemed song request" card (returns the element). Text is filled
 // synchronously; avatar + cost icon load in async without changing the layout.
 function buildCard(item, column) {
   const card = ui.songCardTemplate.content.firstElementChild.cloneNode(true);
 
+  // Text lines scroll-on-hover instead of truncating with an ellipsis. The
+  // username scrolls when its own name is hovered; the three music-card lines
+  // scroll together while anywhere on the music card is hovered. (See MQ above.)
+  card._marquees = [];
+  const mqLine = (sel, text) => {
+    const el = card.querySelector(sel);
+    if (!el) return null;
+    const m = makeMarquee(el, text);
+    card._marquees.push(m);
+    return m;
+  };
+
   // --- header ---
-  card.querySelector('.sc-username').textContent = item.user || 'someone';
+  const unameM = mqLine('.sc-username', item.user || 'someone');
+  if (unameM) bindHover(unameM.win, [unameM]);
 
   // age ("3m") — ticks up via the interval above
   const ageEl = card.querySelector('.sc-age-text');
@@ -1210,10 +1308,13 @@ function buildCard(item, column) {
   art.src = item.albumArt || BLANK_PX;
   art.onerror = () => { art.src = BLANK_PX; };
 
-  card.querySelector('.sc-title').textContent = item.title || item.query || '(unknown)';
+  const musicLines = [];
+  musicLines.push(mqLine('.sc-title', item.title || item.query || '(unknown)'));
   const albumEl = card.querySelector('.sc-album');
-  if (item.album) albumEl.textContent = item.album; else albumEl.remove();
-  card.querySelector('.sc-artist').textContent = item.artist || '';
+  if (item.album) musicLines.push(mqLine('.sc-album', item.album)); else albumEl.remove();
+  musicLines.push(mqLine('.sc-artist', item.artist || ''));
+  const musicCard = card.querySelector('.music-ui-container');
+  if (musicCard) bindHover(musicCard, musicLines);
 
   const durationEl = card.querySelector('.sc-duration');
   if (item.durationMs) card.querySelector('.sc-duration-text').textContent = FormatSongDuration(item.durationMs);

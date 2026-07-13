@@ -401,7 +401,7 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
   font-weight: 600; font-size: 1em;
   color: var(--twitch-purple);
   flex-shrink: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  white-space: nowrap;
 }
 
 
@@ -437,8 +437,6 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
   font-weight: 600;
   color: #000000;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.1;
 }
 .music-ui-album {
@@ -446,8 +444,6 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
   font-weight: 500;
   color: #000000;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.2;
 }
 .music-ui-artist-row {
@@ -460,16 +456,37 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
   overflow: hidden;
   gap: 8px;
 }
-.music-ui-artist { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex-shrink: 1; }
+.music-ui-artist { white-space: nowrap; flex-shrink: 1; min-width: 0; }
 .music-ui-duration { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .music-ui-clock { width: 18px; height: 18px; object-fit: contain; }
 
+/* --- hover-to-scroll marquee (ported from Music-Info-Card/test/collage.html) ---
+   Overflowing text lines (title / album / artist / username) reveal their tail by
+   scrolling while the card — or the username — is hovered, then rewind home when the
+   pointer leaves. An 8px edge fade masks the clipped ends; --l / --r (0→1, set from
+   JS) gate the fade on so it only shows on the side that is actually clipped. */
+/* The mask (below) clips to the border box, and a tight line-height lets glyph
+   descenders (g, y, j) ink just past the box bottom — so they'd be sheared off.
+   padding-block gives the border box a few px of vertical room to contain that
+   ink; the matching negative margin-block cancels it so layout/spacing is
+   unchanged. (padding is vertical only, so the horizontal 8px fade is untouched.) */
+.mq { --l: 0; --r: 0; overflow-x: clip; overflow-y: visible; padding-block: 4px; margin-block: -4px; }
+.mq-inner { display: inline-block; vertical-align: top; white-space: nowrap; will-change: transform; }
+.mq.fade {
+  -webkit-mask-image: linear-gradient(90deg,
+    transparent 0, #000 calc(8px * var(--l)),
+    #000 calc(100% - 8px * var(--r)), transparent 100%);
+  mask-image: linear-gradient(90deg,
+    transparent 0, #000 calc(8px * var(--l)),
+    #000 calc(100% - 8px * var(--r)), transparent 100%);
+}
+
 /* --- this project's extras (buttons get polished later) --- */
-.sc-warn { color: #000000; font-size: 18px; margin-right: 14px; font-weight: 500; }
+.sc-warn { color: #000000; font-size: 18px; font-weight: 500; }
 
 /* header right cluster: age display + the three icon action buttons */
 .sc-header-right { display: flex; align-items: center; margin-left: auto; flex-shrink: 0; }
-.sc-age { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+.sc-age { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; margin-left: 6px;}
 .sc-age-clock { width: 18px; height: 18px; object-fit: contain; }
 .sc-age-text { font-size: 18px; font-weight: 500; color: #000000; }
 

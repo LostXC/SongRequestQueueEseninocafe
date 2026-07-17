@@ -393,6 +393,8 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
 .sub-user-row { display: flex; flex-direction: row; align-items: center; width: 100%; height: 32px; }
 .sub-user-content { display: flex; flex-direction: row; align-items: center; min-width: 0; flex-shrink: 1; }
 
+/* fixed 32×32 slot so the header doesn't shift when the avatar loads in async */
+.sc-avatar { display: inline-block; width: 32px; height: 32px; flex-shrink: 0; }
 .sc-avatar img { display: block; width: 32px; height: 32px; border-radius: 100px; flex-shrink: 0; }
 .sc-platform { display: flex; align-items: center; margin-left: 7px; margin-right: 3px; flex-shrink: 0; }
 .sc-platform img { display: block; width: 0.78em; height: 0.94em; object-fit: contain; }
@@ -504,6 +506,10 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
 
 .sc-icon-btn img { width: 32px; height: 32px; display: block; }
 
+/* invisible 3rd-button stand-in on unplayable request cards, so their age text
+   lines up with the playable cards' (which have three action buttons) */
+.sc-btn-spacer { width: 32px; height: 32px; flex-shrink: 0; visibility: hidden; }
+
 /* ---- now-playing player — look copied 1:1 from the YT Music widget ----
    The white fill + black wobble come from the boiling-border <canvas> (app.js),
    so the content box itself is transparent. */
@@ -559,12 +565,16 @@ body.dark .btn-left-icon { filter: invert(0); } /* black on white */
   gap: 0;                 /* no gap between artist and the progress line */
   padding-right: 4px;
 }
-/* title matches the song-request card title (.music-ui-title) */
-#player .title-wrapper { width: 100%; overflow: hidden; white-space: nowrap; margin-bottom: 3px; }
-#player .title { display: inline-block; font-weight: 600; font-size: 24px; line-height: 1.1; color: #000; will-change: transform; }
+/* title matches the song-request card title (.music-ui-title). The wrappers are
+   the smooth-wrap marquee windows: the soft edge-fade gradient is written
+   inline per frame by app.js, so only mask-repeat lives here. */
+#player .title-wrapper { width: 100%; overflow: hidden; white-space: nowrap; margin-bottom: 3px; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+#player .title { display: inline-flex; font-weight: 600; font-size: 24px; line-height: 1.1; color: #000; will-change: transform; }
 /* artist matches the card artist (.music-ui-artist) */
-#player .artist-wrapper { width: 100%; overflow: hidden; white-space: nowrap; }
-#player .artist { display: inline-block; font-weight: 500; font-size: 18px; line-height: 1.2; color: #000; will-change: transform; }
+#player .artist-wrapper { width: 100%; overflow: hidden; white-space: nowrap; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+#player .artist { display: inline-flex; font-weight: 500; font-size: 18px; line-height: 1.2; color: #000; will-change: transform; }
+/* one run of a line's text; two copies side by side wrap seamlessly */
+.mq-copy { white-space: nowrap; flex-shrink: 0; }
 #player .progress-area { display: flex; flex-direction: row; align-items: center; width: 100%; height: 24px; gap: 8px; }
 /* duration texts match the artist line */
 #player .time { font-weight: 500; font-size: 18px; line-height: 1.2; color: #000; flex-shrink: 0; font-variant-numeric: tabular-nums; }

@@ -449,7 +449,10 @@ function hostApplyAction(type, id) {
     // Drop it entirely.
     removeEverywhere();
   } else if (type === 'accept') {
-    // Approve: move to the end of the play queue.
+    // Approve: move to the end of the play queue. Unplayable items (no videoId)
+    // can't be accepted — their cards offer no Accept button, and a queued item
+    // that can never play would just wedge the queue.
+    if (!item.videoId) return;
     if (inReview) {
       host.reviewQueue = host.reviewQueue.filter((i) => i.id !== id);
       host.playQueue.push(item);
@@ -472,16 +475,22 @@ function hostApplyAction(type, id) {
   renderHost();
 }
 
-// Pop the next approved song and play it.
+// Pop the next approved song and play it, skipping anything without a videoId
+// so an unplayable item can never become the current track.
 function advanceNext() {
-  const next = host.playQueue.shift();
-  if (next) playNow(next);
+  let next;
+  while ((next = host.playQueue.shift())) {
+    if (next.videoId) { playNow(next); return; }
+  }
 }
 
 // Play a specific item right now: fire the deep link and optimistically set the
 // now-playing mirror (the real YTMD socket will correct it within ~1s).
 function playNow(item) {
-  if (item.videoId) fireYtmd(item.videoId);
+  // Never surface an unplayable item as the current track — fall through to the
+  // next playable one instead.
+  if (!item.videoId) { advanceNext(); return; }
+  fireYtmd(item.videoId);
   host.nowPlaying = {
     title: item.title || item.query,
     artist: item.artist || '',
@@ -703,6 +712,7 @@ function setupPlayerBorder() {
   playerBorder = { ctx, basePath: boilBuildBasePath(contentW, contentH, R), contentW, contentH, cw, ch, P, seed };
   playerEraserPts = null; // size changed → rebuild the eraser path
   initPlayerEraserMask(contentW, contentH, P);
+  measureNpMarquees(); // window width changed → re-gauge the title/artist overflow
   if (!playerLoopStarted) { playerLoopStarted = true; requestAnimationFrame(playerBorderTick); }
 }
 
@@ -998,8 +1008,13 @@ function fitViewTitle() {
 }
 
 // Bulk actions run the normal per-item action for every request (snapshot first,
-// since the host mutates the queue as each one is applied).
-function acceptAll() { for (const item of currentReview.slice()) onAction('accept', item.id); }
+// since the host mutates the queue as each one is applied). Accept-all skips
+// unplayable requests — same as their cards, which offer no Accept button.
+function acceptAll() {
+  for (const item of currentReview.slice()) {
+    if (item.playable !== false) onAction('accept', item.id);
+  }
+}
 // The broom clears whichever list is currently shown.
 function declineAll() {
   const list = currentView === 'queue' ? currentPlay : currentReview;
@@ -1355,6 +1370,12 @@ function buildCard(item, column) {
   if (column === 'review') {
     if (item.playable === false) {
       // Unplayable: no play — offer copy ("Title by Artist") + remove on the right.
+      // A hidden spacer stands in for the missing 3rd button, placed between the
+      // age and the buttons so the age lines up with the playable cards' while
+      // the real buttons stay flush right.
+      const spacer = document.createElement('span');
+      spacer.className = 'sc-btn-spacer';
+      actions.appendChild(spacer);
       actions.appendChild(iconBtn('trash-can.svg', 'decline', 'Remove'));
       actions.appendChild(copyBtn());
     } else {
@@ -1404,21 +1425,125 @@ function fallbackCopy(text) {
  * ========================================================================== */
 const np = { secs: 0, dur: 0, playing: false, last: performance.now(), vid: null, scrollStart: null };
 
+/* ---- Smooth-wrap marquee — ported from the YT Music widget (script.js) ------
+   Two copies of each line wrap seamlessly: rest at home, cruise once around
+   (through the end and the wrapped start), land back at home, loop. Both lines
+   share one clock, sized by the longest line, so they move and loop together.
+   Reuses the card marquees' mqScrollMs/mqTravel speed profile above. */
+const NPMQ = { pauseStart: 2000, smoothGap: 32, fadePx: 12 }; // rest ms · copy gap px · fade ramp px
+
+function makeNpLine(innerEl) {
+  innerEl.style.gap = NPMQ.smoothGap + 'px';
+  return { win: innerEl.parentElement, inner: innerEl, copies: innerEl.querySelectorAll('.mq-copy'), text: null, O: 0, unit: 0 };
+}
+const npTitleMq = makeNpLine(ui.npTitle);
+const npArtistMq = makeNpLine(ui.npArtist);
+let npGroupCycle = NPMQ.pauseStart;
+
+// Fill both copies; returns true if the text actually changed.
+function setNpLineText(m, text) {
+  text = text || '';
+  if (m.text === text) return false;
+  m.text = text;
+  m.copies[0].textContent = text;
+  m.copies[1].textContent = text;
+  return true;
+}
+
+// Read layout once per song change (not per frame): O = overflow, unit = one full wrap.
+function measureNpMarquees() {
+  for (const m of [npTitleMq, npArtistMq]) {
+    const copyW = m.copies[0].offsetWidth;
+    m.O = Math.max(0, Math.round(copyW - m.win.clientWidth));
+    m.unit = copyW + NPMQ.smoothGap;
+    m.copies[1].style.display = m.O > 0 ? '' : 'none'; // hide the 2nd copy unless it overflows
+  }
+  let maxUnit = 0;
+  if (npTitleMq.O > 0) maxUnit = Math.max(maxUnit, npTitleMq.unit);
+  if (npArtistMq.O > 0) maxUnit = Math.max(maxUnit, npArtistMq.unit);
+  npGroupCycle = NPMQ.pauseStart + mqScrollMs(maxUnit);
+}
+
+// l fades the left edge (ramps as text scrolls off), r the right (on while overflowing).
+function setNpLineFade(m, l, r) {
+  if (m.O <= 0) { m.win.style.webkitMaskImage = 'none'; m.win.style.maskImage = 'none'; return; }
+  const lp = (l * NPMQ.fadePx).toFixed(2), rp = (r * NPMQ.fadePx).toFixed(2);
+  const g = `linear-gradient(90deg, transparent 0, #000 ${lp}px, #000 calc(100% - ${rp}px), transparent 100%)`;
+  m.win.style.webkitMaskImage = g;
+  m.win.style.maskImage = g;
+}
+
+function tickNpLine(m, timeMs) {
+  if (m.O <= 0) { m.inner.style.transform = 'translateX(0)'; setNpLineFade(m, 0, 0); return; }
+  const t = timeMs % npGroupCycle;
+  // -unit ≡ home (the 2nd copy lands exactly where the 1st began → seamless loop).
+  const off = t < NPMQ.pauseStart ? 0 : -mqTravel(m.unit, t - NPMQ.pauseStart);
+  m.inner.style.transform = `translateX(${off}px)`;
+  const d = Math.min(-off, m.unit + off); // distance from whichever home edge is nearest
+  setNpLineFade(m, Math.max(0, Math.min(1, d / NPMQ.fadePx)), 1);
+}
+
+/* Song-change fade reset (also from the widget): on a track change the title +
+   artist fade OUT, the new text swaps in at the home position, then fades IN —
+   so the scroll always restarts cleanly instead of popping mid-scroll. */
+const NP_RESET_FADE_MS = 200; // fade-out / fade-in half-durations (ms)
+let npReset = null;   // active transition { phase, start, title, artist } or null
+let npSongKey = '';   // identity of the shown/transitioning track text
+
+function applyNpText(title, artist) {
+  setNpLineText(npTitleMq, title);
+  setNpLineText(npArtistMq, artist);
+  measureNpMarquees();
+  np.scrollStart = null; // restart the shared scroll clock at home
+}
+
+function startNpTextReset(title, artist) {
+  if (!npTitleMq.text && !npArtistMq.text) {
+    // First song: nothing on screen to fade out — show it and just fade in.
+    applyNpText(title, artist);
+    npReset = { phase: 'in', start: performance.now() };
+  } else {
+    // Keep the old text visible; fade it out, swap at home, fade back in.
+    npReset = { phase: 'out', start: performance.now(), title, artist };
+  }
+}
+
+// Advance the fade-reset one frame; returns the current text opacity (0→1).
+function tickNpTextReset() {
+  if (!npReset) return 1;
+  const p = Math.min(1, (performance.now() - npReset.start) / NP_RESET_FADE_MS);
+  if (npReset.phase === 'out') {
+    if (p >= 1) {
+      applyNpText(npReset.title, npReset.artist); // swap new text in at home
+      npReset = { phase: 'in', start: performance.now() };
+      return 0;
+    }
+    return 1 - p;
+  }
+  if (p >= 1) { npReset = null; return 1; } // phase 'in'
+  return p;
+}
+
 function updateNowPlaying(n) {
   if (!n) {
-    if (np.vid !== null) { ui.npTitle.textContent = ''; ui.npArtist.textContent = ''; ui.npArt.src = BLANK_PX; }
+    if (npSongKey) { npSongKey = ''; npReset = null; applyNpText('', ''); ui.npArt.src = BLANK_PX; }
     np.playing = false; np.secs = 0; np.dur = 0; np.vid = null; np.scrollStart = null;
     handlePlayerVisibility(false); // nothing playing → animate the player out
     return;
   }
 
-  const songChanged = n.videoId !== np.vid;
+  // The track's identity is its TEXT (like the widget) — keying on videoId alone
+  // would miss songs without a YouTube match and leave the bar showing stale text.
+  const incomingKey = (n.title || '') + '␟' + (n.artist || '');
+  const songChanged = incomingKey !== npSongKey || n.videoId !== np.vid;
   if (songChanged) {
     np.vid = n.videoId;
-    ui.npTitle.textContent = n.title || '';
-    ui.npArtist.textContent = n.artist || '';
-    ui.npArt.src = n.albumArt || BLANK_PX;
-    np.scrollStart = null; // restart the title/artist scroll for the new song
+    if (incomingKey !== npSongKey) {
+      npSongKey = incomingKey;
+      startNpTextReset(n.title || '', n.artist || '');
+    }
+    const art = n.albumArt || BLANK_PX;
+    if (ui.npArt.src !== art) ui.npArt.src = art;
   }
 
   np.dur = n.durationSeconds || 0;
@@ -1438,38 +1563,17 @@ function updateNowPlaying(n) {
   }
 }
 
-// Title/artist horizontal scroll when they overflow (ported from the widget):
-// pause, ease-scroll to the end, pause, snap back. `syncOverflow` keeps the
-// title and artist scrolling on the same clock so they line up.
-function getScrollOffset(overflow, syncOverflow, timeMs) {
-  if (overflow <= 0) return 0;
-  const speed = 40;
-  const scrollDur = (syncOverflow / speed) * 1000;
-  const myScrollDur = (overflow / speed) * 1000;
-  const pauseStart = 6000, pauseEnd = 6000;
-  const totalCycle = pauseStart + scrollDur + pauseEnd;
-  const t = timeMs % totalCycle;
-  if (t < pauseStart) return 0;
-  if (t >= pauseStart + scrollDur) return -overflow;
-  const scrollTime = t - pauseStart;
-  if (scrollTime >= myScrollDur) return -overflow;
-  const p = scrollTime / myScrollDur;
-  const ease = -(Math.cos(Math.PI * p) - 1) / 2;
-  return -(ease * overflow);
-}
-
-// rAF loop: interpolate progress, scroll the text, and draw the animated
-// sine-wave progress line + thumb — all 1:1 with the widget.
+// rAF loop: interpolate progress, run the smooth-wrap marquee + fade reset, and
+// draw the animated sine-wave progress line + thumb — all 1:1 with the widget.
 function tickPlayer(ts) {
   if (np.scrollStart === null) np.scrollStart = ts;
   const timeMs = ts - np.scrollStart;
 
-  const titleEl = ui.npTitle, artistEl = ui.npArtist;
-  const titleOverflow = Math.max(0, titleEl.scrollWidth - titleEl.parentElement.clientWidth);
-  const artistOverflow = Math.max(0, artistEl.scrollWidth - artistEl.parentElement.clientWidth);
-  const maxOverflow = Math.max(titleOverflow, artistOverflow);
-  titleEl.style.transform = `translateX(${getScrollOffset(titleOverflow, maxOverflow, timeMs)}px)`;
-  artistEl.style.transform = `translateX(${getScrollOffset(artistOverflow, maxOverflow, timeMs)}px)`;
+  tickNpLine(npTitleMq, timeMs);
+  tickNpLine(npArtistMq, timeMs);
+  const textOpacity = tickNpTextReset();
+  ui.npTitle.style.opacity = textOpacity;
+  ui.npArtist.style.opacity = textOpacity;
 
   let secs = np.secs;
   if (np.playing && np.dur > 0) secs += (performance.now() - np.last) / 1000;

@@ -693,6 +693,14 @@ let playerAnimState = 'HIDDEN';      // HIDDEN | APPEARING | VISIBLE | DISAPPEAR
 let playerAnimStart = performance.now();
 let playerEraserPts = null;
 let playerLoopStarted = false;
+// Resolved once instead of on every frame of playerBorderTick. The eraser path is
+// re-resolved whenever initPlayerEraserMask rewrites the <svg>, which is the only
+// thing that replaces the node.
+let npContentEl = null;
+let npEraserPathEl = null;
+let npHiddenSettled = false;   // has the HIDDEN state already been wiped to screen?
+let npIntroHoldIdx = null;     // the one drawing held through the appear animation
+let npLastDrawnIdx = -1;       // which drawing the border canvas currently holds
 
 // Measure the player card and (re)build its border canvas. Starts the single
 // animation loop the first time.
@@ -712,6 +720,8 @@ function setupPlayerBorder() {
   playerBorder = { ctx, basePath: boilBuildBasePath(contentW, contentH, R), contentW, contentH, cw, ch, P, seed };
   playerEraserPts = null; // size changed → rebuild the eraser path
   initPlayerEraserMask(contentW, contentH, P);
+  npHiddenSettled = false;   // canvas was just resized (and so cleared)
+  npLastDrawnIdx = -1;       // ...so whatever it held is gone; force a repaint
   measureNpMarquees(); // window width changed → re-gauge the title/artist overflow
   if (!playerLoopStarted) { playerLoopStarted = true; requestAnimationFrame(playerBorderTick); }
 }
@@ -745,7 +755,11 @@ function initPlayerEraserMask(W, H, P) {
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="white" />` +
     `<path id="np-eraser-path" fill="none" stroke="black" stroke-width="160" stroke-linecap="round" stroke-linejoin="round" />` +
     `</mask></defs>`;
+  // innerHTML above replaced the old node, so re-resolve it here rather than
+  // looking it up again on every frame of the tick.
+  npEraserPathEl = svg.querySelector('#np-eraser-path') || document.getElementById('np-eraser-path');
   const content = document.querySelector('.np-card-content');
+  npContentEl = content;
   if (content) { content.style.mask = 'url(#np-eraser-mask)'; content.style.webkitMask = 'url(#np-eraser-mask)'; }
 }
 
@@ -802,27 +816,57 @@ function playerBorderTick(ts) {
   const pb = playerBorder;
   if (!pb) return;
   const ctx = pb.ctx;
-  const contentEl = document.querySelector('.np-card-content');
+  const contentEl = npContentEl;
   let elapsed = ts - playerAnimStart;
 
   if (playerAnimState === 'DISAPPEARING' && elapsed >= NP_OUTRO) {
     playerAnimState = 'HIDDEN';
     pb.seed = Math.random() * 1000;
     playerEraserPts = null;
+    npHiddenSettled = false;
   }
+
+  // Between songs the player sits HIDDEN, and this loop was still clearing a
+  // full-size canvas, re-querying the eraser path and re-writing the same two
+  // values sixty times a second to keep the screen exactly as blank as it already
+  // was. Wipe it once on the way in; after that a hidden player costs one
+  // comparison per frame until it is asked to come back.
+  if (playerAnimState === 'HIDDEN') {
+    if (!npHiddenSettled) {
+      npHiddenSettled = true;
+      npIntroHoldIdx = null;   // next appearance picks its own held drawing
+      npLastDrawnIdx = -1;
+      ctx.clearRect(-50, -50, pb.cw + 100, pb.ch + 100);
+      if (contentEl) contentEl.style.opacity = 0;
+      if (npEraserPathEl) npEraserPathEl.setAttribute('d', '');
+    }
+    return;
+  }
+  npHiddenSettled = false;
+
+  // Which drawing this frame gets. The player holds ONE through its intro, so the
+  // line draws itself on and settles before it starts boiling, rather than
+  // wobbling its way in. After that it follows the same beat as every other
+  // boiling outline on the page.
+  let boilIdx;
+  if (playerAnimState === 'APPEARING') {
+    if (npIntroHoldIdx === null) npIntroHoldIdx = boilIndexAt(ts / 1000);
+    boilIdx = npIntroHoldIdx;
+  } else {
+    npIntroHoldIdx = null;
+    boilIdx = boilIndexAt(ts / 1000);
+  }
+  // Settled, and the drawing hasn't turned over: nothing to repaint. Bailing here
+  // rather than after the clear matters — clearing and not redrawing would blank
+  // a border that was already correct.
+  if (playerAnimState === 'VISIBLE' && boilIdx === npLastDrawnIdx) return;
+  npLastDrawnIdx = boilIdx;
 
   ctx.clearRect(-50, -50, pb.cw + 100, pb.ch + 100);
 
-  if (playerAnimState === 'HIDDEN') {
-    if (contentEl) contentEl.style.opacity = 0;
-    const ep = document.getElementById('np-eraser-path');
-    if (ep) ep.setAttribute('d', '');
-    return;
-  }
-
   ctx.save();
   ctx.translate(pb.P, pb.P);
-  const deformed = boilDeformPath(pb.basePath, ts / 1000, pb.seed);
+  const borderPath = boilBuildSmoothPath(boilDeformPath(pb.basePath, boilZ(boilIdx), pb.seed));
   ctx.lineWidth = BOIL_CFG.strokeWidth;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -844,16 +888,16 @@ function playerBorderTick(ts) {
     }
 
     ctx.fillStyle = `rgba(255,255,255,${smoothFade})`;
-    boilTraceSmoothPath(ctx, deformed); ctx.fill();
+    ctx.fill(borderPath);
     if (contentEl) contentEl.style.opacity = smoothFade;
     ctx.strokeStyle = '#000000';
-    boilTraceSmoothPath(ctx, deformed); ctx.stroke();
+    ctx.stroke(borderPath);
   } else { // VISIBLE or DISAPPEARING
     ctx.setLineDash([]);
     ctx.fillStyle = '#ffffff';
-    boilTraceSmoothPath(ctx, deformed); ctx.fill();
+    ctx.fill(borderPath);
     ctx.strokeStyle = '#000000';
-    boilTraceSmoothPath(ctx, deformed); ctx.stroke();
+    ctx.stroke(borderPath);
     if (contentEl && contentEl.style.opacity !== '1') contentEl.style.opacity = 1;
 
     if (playerAnimState === 'DISAPPEARING') {
@@ -870,7 +914,7 @@ function playerBorderTick(ts) {
           break;
         }
       }
-      const ep = document.getElementById('np-eraser-path');
+      const ep = npEraserPathEl;   // resolved in initPlayerEraserMask
       if (ep) { ep.setAttribute('d', d); ep.setAttribute('transform', `translate(${(Math.random() - 0.5) * 2},${(Math.random() - 0.5) * 2})`); }
       // erase the border canvas too (the mask handles the content)
       ctx.globalCompositeOperation = 'destination-out';
@@ -1067,6 +1111,31 @@ const Simplex3D = (function () {
 })();
 
 const BOIL_CFG = { cornerRadius: 20, strokeWidth: 7, noiseFreq: 4.2, noiseCoordScale: 0.006, noiseTimeScale: 1.0, noiseAmp: 1.5, divW: 200, divH: 60, divCorner: 10, padding: 10 };
+
+/* ── Boil cadence — the same two knobs the OBS overlays use ────────────────
+   boilFps  — how many drawings a second (they are held in between).
+   boilStep — how far the noise field moves between drawings. 3D simplex
+              decorrelates over ~1.0 of z, so a step this size makes each redraw
+              read as a fresh drawing instead of a nudge of the last one.
+
+   This page had no throttle at all: every card border was rebuilt on every
+   display frame off a clock that advanced ~0.017 per frame — sixty redraws a
+   second of a line that had barely changed. Quantising time to the drawing grid
+   fixes both ends at once, because the same expression gives the noise
+   coordinate AND tells you whether there is anything new to paint.
+   Old smooth look: ?boilFps=60&boilStep=0.017                                */
+const boilFps = Math.max(1, Math.min(60, parseInt(params.get('boilFps'), 10) || 7));
+const boilStep = Math.max(0, Math.min(4, parseFloat(params.get('boilStep')) || 0.178));
+window.BOIL = {
+  fps: boilFps,
+  step: boilStep,
+  get amp() { return BOIL_CFG.noiseAmp; },
+  set amp(v) { BOIL_CFG.noiseAmp = Math.max(0, Math.min(6, v)); },
+};
+const boilIndexAt = (tSec) => Math.floor(tSec * BOIL.fps);
+const boilZ = (idx) => idx * BOIL.step;
+// A card puts one drawing down and holds it while it lands, then starts boiling.
+const BOIL_HOLD_ON_APPEAR_MS = 650;
 function boilBuildBasePath(W, H, R) {
   const pts = []; const { divW, divH, divCorner } = BOIL_CFG;
   for (let i=0; i<divW; i++) pts.push({ x: R+(W-2*R)*(i/divW), y: 0 });
@@ -1079,14 +1148,35 @@ function boilBuildBasePath(W, H, R) {
   for (let i=0; i<divCorner; i++) pts.push({ x: R+R*Math.cos(Math.PI+(Math.PI/2)*(i/divCorner)), y: R+R*Math.sin(Math.PI+(Math.PI/2)*(i/divCorner)) });
   return pts;
 }
+/* One scratch array of points, shared by every border and rewritten in place on
+   each draw. The .map() this replaced built a fresh 560-object array every time —
+   per card, per frame — and threw it away as soon as the path was traced. Each
+   border finishes with the points before the next one is deformed, so a single
+   buffer serves all of them. */
+const boilScratch = [];
 function boilDeformPath(base, time, seed) {
   const freq = BOIL_CFG.noiseFreq * BOIL_CFG.noiseCoordScale, t = time * BOIL_CFG.noiseTimeScale;
-  return base.map(p => ({ x: p.x + Simplex3D(p.x*freq+seed, p.y*freq+seed, t) * BOIL_CFG.noiseAmp, y: p.y + Simplex3D(p.x*freq+seed+99.9, p.y*freq+seed+99.9, t) * BOIL_CFG.noiseAmp }));
+  const out = boilScratch, n = base.length;
+  if (out.length !== n) out.length = n;   // every base path is 560 points, but don't assume it
+  for (let i=0; i<n; i++) {
+    const p = base[i], o = out[i] || (out[i] = { x: 0, y: 0 });
+    o.x = p.x + Simplex3D(p.x*freq+seed, p.y*freq+seed, t) * BOIL_CFG.noiseAmp;
+    o.y = p.y + Simplex3D(p.x*freq+seed+99.9, p.y*freq+seed+99.9, t) * BOIL_CFG.noiseAmp;
+  }
+  return out;
 }
-function boilTraceSmoothPath(c, pts) {
-  if (pts.length < 3) return; c.beginPath(); let p1 = pts[0]; c.moveTo((pts[pts.length-1].x+p1.x)/2, (pts[pts.length-1].y+p1.y)/2);
-  for (let i=0; i<pts.length; i++) { p1 = pts[i]; const p2 = pts[(i+1)%pts.length]; c.quadraticCurveTo(p1.x, p1.y, (p1.x+p2.x)/2, (p1.y+p2.y)/2); }
-  c.closePath();
+/* Build the smoothed outline ONCE per draw and hand the same Path2D to every fill
+   and stroke the frame needs. Tracing straight into the context meant replaying
+   all 560 quadraticCurveTo calls a second time to describe the identical shape
+   that had just been filled — the context rebuilds its path from scratch after
+   every beginPath(), so it had no way to know it was the same curve. */
+function boilBuildSmoothPath(pts) {
+  const path = new Path2D();
+  if (pts.length < 3) return path;
+  let p1 = pts[0]; path.moveTo((pts[pts.length-1].x+p1.x)/2, (pts[pts.length-1].y+p1.y)/2);
+  for (let i=0; i<pts.length; i++) { p1 = pts[i]; const p2 = pts[(i+1)%pts.length]; path.quadraticCurveTo(p1.x, p1.y, (p1.x+p2.x)/2, (p1.y+p2.y)/2); }
+  path.closePath();
+  return path;
 }
 
 // Registry of card canvases + one shared animation loop.
@@ -1100,7 +1190,9 @@ function registerBoil(canvas, contentW, contentH, bottomExtension, strokeColor) 
   canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
   const ctx = canvas.getContext('2d');
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  const entry = { canvas, ctx, P, cw, ch, seed: Math.random() * 1000, stroke: strokeColor || '#000000', basePath: boilBuildBasePath(contentW, contentH + bottomExtension, R) };
+  const entry = { canvas, ctx, P, cw, ch, seed: Math.random() * 1000, stroke: strokeColor || '#000000',
+                  basePath: boilBuildBasePath(contentW, contentH + bottomExtension, R),
+                  bornAt: 0, heldIdx: null, lastDrawnIdx: -1 };
   canvas._boilEntry = entry;
   boilEntries.add(entry);
 }
@@ -1125,17 +1217,29 @@ function setupCardBorders(card) {
 }
 
 function boilTick(ts) {
+  const idx = boilIndexAt(ts / 1000);
   for (const e of boilEntries) {
     if (!e.canvas.isConnected) { boilEntries.delete(e); continue; }
+    if (!e.bornAt) e.bornAt = ts;
+
+    // One drawing, held while the card lands; the shared beat after that.
+    let want = idx;
+    if (ts - e.bornAt < BOIL_HOLD_ON_APPEAR_MS) {
+      if (e.heldIdx === null) e.heldIdx = idx;
+      want = e.heldIdx;
+    }
+    if (want === e.lastDrawnIdx) continue;   // nothing has turned over
+    e.lastDrawnIdx = want;
+
     const ctx = e.ctx;
     ctx.clearRect(0, 0, e.cw, e.ch);
     ctx.save();
     ctx.translate(e.P, e.P);
-    const deformed = boilDeformPath(e.basePath, ts / 1000, e.seed);
+    const path = boilBuildSmoothPath(boilDeformPath(e.basePath, boilZ(want), e.seed));
     ctx.fillStyle = '#ffffff';
-    boilTraceSmoothPath(ctx, deformed); ctx.fill();
+    ctx.fill(path);
     ctx.strokeStyle = e.stroke; ctx.lineWidth = BOIL_CFG.strokeWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    boilTraceSmoothPath(ctx, deformed); ctx.stroke();
+    ctx.stroke(path);
     ctx.restore();
   }
   requestAnimationFrame(boilTick);
